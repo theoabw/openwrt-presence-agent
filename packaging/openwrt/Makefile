@@ -18,7 +18,7 @@ PKG_BUILD_FLAGS:=no-mips16
 
 GO_PKG:=github.com/theoabw/openwrt-presence-agent
 GO_PKG_BUILD_PKG:=$(GO_PKG)/cmd/openwrt-presence-agent
-GO_PKG_LDFLAGS_X:=$(GO_PKG)/cmd/openwrt-presence-agent.version=$(PKG_VERSION)
+GO_PKG_LDFLAGS_X:=main.version=$(PKG_VERSION)
 
 include $(INCLUDE_DIR)/package.mk
 include $(TOPDIR)/feeds/packages/lang/golang/golang-package.mk
