@@ -1,3 +1,3 @@
 module github.com/theoabw/openwrt-presence-agent
 
-go 1.25
+go 1.23

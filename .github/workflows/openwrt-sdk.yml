@@ -26,6 +26,8 @@ jobs:
         include:
           - openwrt: "25.12.5"
             arch: x86_64
+          - openwrt: "24.10.7"
+            arch: x86_64
     steps:
       - uses: actions/checkout@v7
         with:
