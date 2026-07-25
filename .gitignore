@@ -1,0 +1,13 @@
+/bin/
+/dist/
+/.openwrt-feed/
+/coverage.out
+*.test
+*.ipk
+*.apk
+*.pyc
+__pycache__/
+.DS_Store
+
+# Local product research, specifications, and architecture decision notes.
+/.project-notes/

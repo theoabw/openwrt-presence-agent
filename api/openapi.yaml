@@ -1,0 +1,256 @@
+openapi: 3.1.0
+info:
+  title: OpenWrt Presence Agent API
+  version: 1.0.0
+  description: Authenticated, read-only client observations and connection state.
+servers:
+  - url: http://127.0.0.1:8787
+security:
+  - bearerAuth: []
+paths:
+  /v1/info:
+    get:
+      operationId: getInfo
+      responses:
+        "200":
+          description: Agent identity and capabilities.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Info" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+  /v1/health:
+    get:
+      operationId: getHealth
+      responses:
+        "200":
+          description: Operational or degraded after a prior authoritative snapshot.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Health" }
+        "503":
+          description: No authoritative snapshot is available yet.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Health" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+  /v1/clients:
+    get:
+      operationId: listClients
+      responses:
+        "200":
+          description: Internally consistent current state; check health for provider readiness.
+          content:
+            application/json:
+              schema: { $ref: "./protocol.schema.json#/$defs/snapshot" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+  /v1/clients/{client_id}:
+    get:
+      operationId: getClient
+      parameters:
+        - name: client_id
+          in: path
+          required: true
+          schema: { type: string, maxLength: 128 }
+      responses:
+        "200":
+          description: One client.
+          content:
+            application/json:
+              schema: { $ref: "./protocol.schema.json#/$defs/client" }
+        "404": { description: Client not found. }
+        "400": { description: Invalid client ID. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+  /v1/providers:
+    get:
+      operationId: listProviders
+      responses:
+        "200":
+          description: Provider health and discovered source instances.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [providers]
+                properties:
+                  providers:
+                    type: array
+                    maxItems: 16
+                    items: { $ref: "#/components/schemas/Provider" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+  /v1/diagnostics:
+    get:
+      operationId: getDiagnostics
+      responses:
+        "200":
+          description: Bounded, redacted runtime diagnostics.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Diagnostics" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+  /v1/events:
+    get:
+      operationId: streamEvents
+      description: |
+        Upgrade to WebSocket. The server sends stream.hello, a current
+        internally consistent state.snapshot, then strictly ordered
+        state-changing events. Check health for provider readiness. Replay is
+        not supported.
+      responses:
+        "101": { description: WebSocket event stream. }
+        "400": { description: Invalid or unsupported WebSocket upgrade. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "503": { description: Stream client limit reached. }
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+  responses:
+    Unauthorized:
+      description: Missing or invalid bearer token.
+    TooManyRequests:
+      description: Authentication failure rate limit exceeded.
+  schemas:
+    Health:
+      type: object
+      additionalProperties: false
+      required: [status, providers]
+      properties:
+        status: { enum: [not_ready, operational, degraded] }
+        providers:
+          type: array
+          maxItems: 16
+          items: { $ref: "#/components/schemas/Provider" }
+    Diagnostics:
+      type: object
+      additionalProperties: false
+      required:
+        - uptime_seconds
+        - listener
+        - configuration
+        - providers
+        - state
+        - authentication_failures
+        - memory
+        - clock
+        - privilege
+      properties:
+        uptime_seconds: { type: integer, minimum: 0 }
+        listener:
+          type: object
+          additionalProperties: false
+          required: [address, port]
+          properties:
+            address: { type: string }
+            port: { type: integer, minimum: 1, maximum: 65535 }
+        configuration:
+          type: object
+          additionalProperties: false
+          required:
+            - provider
+            - reconcile_interval
+            - discovery_interval
+            - max_clients
+            - max_http_connections
+            - provider_queue_size
+            - max_stream_clients
+            - stream_queue_size
+            - authentication
+          properties:
+            provider: { const: ubus }
+            reconcile_interval: { type: string }
+            discovery_interval: { type: string }
+            max_clients: { type: integer, minimum: 1 }
+            max_http_connections: { type: integer, minimum: 1 }
+            provider_queue_size: { type: integer, minimum: 1 }
+            max_stream_clients: { type: integer, minimum: 1 }
+            stream_queue_size: { type: integer, minimum: 1 }
+            authentication: { const: bearer }
+        providers:
+          type: array
+          maxItems: 16
+          items: { $ref: "#/components/schemas/Provider" }
+        state:
+          type: object
+          additionalProperties: false
+          required:
+            - clients
+            - connections
+            - stream_clients
+            - dropped_stream_clients
+            - sequence
+            - reconciliations
+          properties:
+            clients: { type: integer, minimum: 0 }
+            connections: { type: integer, minimum: 0 }
+            stream_clients: { type: integer, minimum: 0 }
+            dropped_stream_clients: { type: integer, minimum: 0 }
+            sequence: { type: integer, minimum: 0 }
+            reconciliations: { type: integer, minimum: 0 }
+        authentication_failures: { type: integer, minimum: 0 }
+        memory:
+          type: object
+          additionalProperties: false
+          required: [alloc_bytes, sys_bytes]
+          properties:
+            alloc_bytes: { type: integer, minimum: 0 }
+            sys_bytes: { type: integer, minimum: 0 }
+        clock:
+          type: object
+          additionalProperties: false
+          required: [synchronization]
+          properties:
+            synchronization: { const: unverified }
+        privilege:
+          type: object
+          additionalProperties: false
+          required: [mode, verified_unprivileged]
+          properties:
+            mode: { const: "service process identity" }
+            verified_unprivileged: { const: false }
+    Provider:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - kind
+        - status
+        - snapshot_supported
+        - sources
+        - snapshot_source
+        - event_source
+      properties:
+        id: { type: string, maxLength: 64 }
+        kind: { type: string, maxLength: 32 }
+        status: { enum: [initializing, healthy, unavailable, stopped] }
+        snapshot_supported: { type: boolean }
+        sources:
+          type: array
+          maxItems: 128
+          items: { type: string, maxLength: 64 }
+        last_snapshot_at: { type: string, format: date-time }
+        last_event_at: { type: string, format: date-time }
+        last_error: { type: string, maxLength: 512 }
+        snapshot_source: { type: string, maxLength: 64 }
+        event_source: { type: string, maxLength: 64 }
+    Info:
+      type: object
+      additionalProperties: false
+      required: [name, protocol_version, agent_id, version, capabilities]
+      properties:
+        name: { const: openwrt-presence-agent }
+        protocol_version: { const: v1 }
+        agent_id: { type: string, pattern: "^[0-9a-f]{32}$" }
+        version: { type: string, maxLength: 64 }
+        capabilities:
+          type: array
+          maxItems: 16
+          items: { type: string }

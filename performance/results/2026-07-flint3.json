@@ -1,0 +1,136 @@
+{
+  "schema_version": 1,
+  "status": "measured",
+  "date": "2026-07-24",
+  "environment": {
+    "router_model": "GL.iNet Flint 3 (GL-BE9300)",
+    "router_soc": "Qualcomm IPQ5332",
+    "router_architecture": "arm64",
+    "firmware": "GL.iNet 4.9.0",
+    "openwrt": "23.05-SNAPSHOT",
+    "kernel": "5.4.213",
+    "home_assistant": "2026.7.3",
+    "go": "1.26.0",
+    "observer_commit": "c5ad2ac87d1bf9c67e14f02adf040f2d1839847f",
+    "integration_commit": "9f682a30440db7676689ec25304435a2d2bad405"
+  },
+  "engine_router": {
+    "runs_per_case": 10,
+    "cases": [
+      {
+        "name": "full_reconcile_50_clients",
+        "median_ns_per_op": 237252,
+        "minimum_ns_per_op": 214238,
+        "maximum_ns_per_op": 296481,
+        "median_bytes_per_op": 17650,
+        "median_allocations_per_op": 163
+      },
+      {
+        "name": "full_reconcile_500_clients",
+        "median_ns_per_op": 3075910.5,
+        "minimum_ns_per_op": 2915499,
+        "maximum_ns_per_op": 3836643,
+        "median_bytes_per_op": 196802,
+        "median_allocations_per_op": 1533
+      },
+      {
+        "name": "source_reconcile_500_unchanged_clients",
+        "median_ns_per_op": 1215164,
+        "minimum_ns_per_op": 1135734,
+        "maximum_ns_per_op": 1475799,
+        "median_bytes_per_op": 55090,
+        "median_allocations_per_op": 14
+      }
+    ]
+  },
+  "router_idle_resources": {
+    "sampling_boundary": "proc_process_counters",
+    "sample_count": 296,
+    "elapsed_seconds": 299,
+    "connected_stream_clients": 1,
+    "cpu": {
+      "ticks_delta": 28,
+      "linux_user_hz": 100,
+      "percent": 0.093645
+    },
+    "rss_kib": {
+      "median": 10708,
+      "minimum": 10708,
+      "maximum": 10708
+    },
+    "threads": {
+      "minimum": 11,
+      "maximum": 11
+    }
+  },
+  "router_toggle_resources": {
+    "sampling_boundary": "proc_process_counters",
+    "sample_count": 232,
+    "elapsed_seconds": 234,
+    "physical_cycles": 50,
+    "cpu": {
+      "ticks_delta": 47,
+      "linux_user_hz": 100,
+      "percent": 0.200855
+    },
+    "rss_kib": {
+      "median": 10684,
+      "minimum": 10684,
+      "maximum": 10684
+    },
+    "threads": {
+      "minimum": 11,
+      "maximum": 11
+    }
+  },
+  "observer_to_home_assistant": {
+    "clock": "single_process_monotonic",
+    "boundary": "observer_websocket_receive_to_ha_state_event_receive",
+    "session_count": 2,
+    "all_sessions_summary_ms": {
+      "sample_count": 110,
+      "mean": 6.931918,
+      "median": 6.52,
+      "p95": 11.877,
+      "p99": 15.935,
+      "minimum": 1.757,
+      "maximum": 17.184,
+      "all_samples_below_20_ms": true
+    },
+    "primary_run": {
+      "description": "50-cycle measurement session",
+      "physical_cycles": 50,
+      "all_samples_below_20_ms": true,
+      "all_samples_below_13_ms": true,
+      "combined_summary_ms": {
+        "sample_count": 100,
+        "mean": 6.74762,
+        "median": 6.502,
+        "p95": 11.364,
+        "p99": 11.996,
+        "minimum": 1.757,
+        "maximum": 12.751
+      },
+      "direction_summary_ms": {
+        "home": {
+          "sample_count": 50,
+          "mean": 7.18446,
+          "median": 6.351,
+          "p95": 11.877,
+          "p99": 12.751,
+          "minimum": 2.679,
+          "maximum": 12.751
+        },
+        "not_home": {
+          "sample_count": 50,
+          "mean": 6.31078,
+          "median": 6.7055,
+          "p95": 8.134,
+          "p99": 8.848,
+          "minimum": 1.757,
+          "maximum": 8.848
+        }
+      }
+    }
+  }
+}

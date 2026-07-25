@@ -1,0 +1,34 @@
+name: Bug report
+description: Report a reproducible agent or packaging problem
+title: "bug: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: Do not include tokens, Wi-Fi credentials, MAC addresses, client inventories, or unsanitized router dumps.
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: Whatever you know is enough.
+      placeholder: "Agent 0.1.0, router model, firmware"
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: What happened?
+      description: Tell us what you expected and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: How can we reproduce it?
+      description: Optional, but useful for intermittent problems.
+  - type: textarea
+    id: logs
+    attributes:
+      label: Sanitized logs
+      description: Optional. A short relevant excerpt is usually enough.
+      render: shell

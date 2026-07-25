@@ -1,0 +1,146 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"
+
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      - name: Verify release version
+        id: version
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          recipe_version="$(sed -n 's/^PKG_VERSION:=//p' packaging/openwrt/Makefile)"
+          test "$version" = "$recipe_version"
+          printf 'version=%s\n' "$version" >> "$GITHUB_OUTPUT"
+
+      - name: Check
+        run: scripts/check.sh
+
+  vendor-package:
+    needs: check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: Build hardware-verified vendor package
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          scripts/build-ipk.sh \
+            "$version" \
+            aarch64_cortex-a53_neon-vfpv4 \
+            arm64 \
+            dist
+          scripts/check-package.sh dist/*.ipk
+      - uses: actions/upload-artifact@v7
+        with:
+          name: vendor-package
+          path: dist/*.ipk
+          if-no-files-found: error
+
+  sdk-packages:
+    needs: check
+    name: OpenWrt ${{ matrix.openwrt }} / ${{ matrix.arch }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - openwrt: "25.12.5"
+            arch: x86_64
+          - openwrt: "25.12.5"
+            arch: aarch64_cortex-a53
+          - openwrt: "25.12.5"
+            arch: aarch64_generic
+          - openwrt: "25.12.5"
+            arch: arm_cortex-a7_neon-vfpv4
+          - openwrt: "25.12.5"
+            arch: mips_24kc
+          - openwrt: "25.12.5"
+            arch: mipsel_24kc
+          - openwrt: "24.10.7"
+            arch: x86_64
+          - openwrt: "24.10.7"
+            arch: aarch64_cortex-a53
+          - openwrt: "24.10.7"
+            arch: arm_cortex-a7_neon-vfpv4
+          - openwrt: "24.10.7"
+            arch: mips_24kc
+          - openwrt: "24.10.7"
+            arch: mipsel_24kc
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+      - name: Prepare immutable package feed
+        run: scripts/prepare-openwrt-feed.sh .openwrt-feed
+      - name: Build with official OpenWrt SDK
+        uses: openwrt/gh-action-sdk@797d0e3d0eb13b355c3447f60d0179d4b43089e2
+        env:
+          ARCH: ${{ matrix.arch }}-${{ matrix.openwrt }}
+          FEED_DIR: ${{ github.workspace }}/.openwrt-feed
+          FEEDNAME: presence
+          PACKAGES: openwrt-presence-agent
+          V: s
+      - name: Collect package
+        run: |
+          mkdir dist
+          find bin -type f \( -name 'openwrt-presence-agent_*.ipk' -o -name 'openwrt-presence-agent-*.apk' \) \
+            -exec cp '{}' dist/ \;
+          test "$(find dist -type f | wc -l)" -eq 1
+      - uses: actions/upload-artifact@v7
+        with:
+          name: sdk-${{ matrix.openwrt }}-${{ matrix.arch }}
+          path: dist/*
+          if-no-files-found: error
+
+  publish:
+    needs: [vendor-package, sdk-packages]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Create checksums
+        run: |
+          cd dist
+          sha256sum ./*.apk ./*.ipk > SHA256SUMS
+      - name: Attest public release assets
+        if: github.event.repository.visibility == 'public'
+        uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6
+        with:
+          subject-path: |
+            dist/*.apk
+            dist/*.ipk
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            --verify-tag \
+            --generate-notes \
+            --title "OpenWrt Presence Agent $GITHUB_REF_NAME" \
+            dist/*.apk dist/*.ipk dist/SHA256SUMS

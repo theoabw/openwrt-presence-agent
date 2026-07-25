@@ -1,0 +1,30 @@
+name: Router compatibility report
+description: Report results from the compatibility checklist
+title: "compat: "
+labels: ["router compatibility", "testing wanted"]
+body:
+  - type: markdown
+    attributes:
+      value: Thanks for trying the project on a real router—every success, partial result, and failure helps. A short report is enough. Remove client identities, SSIDs, tokens, credentials, and public IP addresses.
+  - type: input
+    id: environment
+    attributes:
+      label: Router and firmware
+      placeholder: "Model, firmware version, OpenWrt target or package architecture if known"
+    validations:
+      required: true
+  - type: dropdown
+    id: result
+    attributes:
+      label: Overall result
+      options:
+        - Everything worked
+        - Partly worked
+        - Did not work
+    validations:
+      required: true
+  - type: textarea
+    id: notes
+    attributes:
+      label: What did you test?
+      description: A short note about installation, arrival/departure, or anything that failed is enough.

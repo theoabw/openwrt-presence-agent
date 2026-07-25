@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/theoabw/openwrt-presence-agent/api/protocol.schema.json",
+  "title": "OpenWrt Presence Agent v1 protocol",
+  "$defs": {
+    "connection": {
+      "type": "object",
+      "required": ["id", "provider", "source_instance", "connected_at", "last_seen_at"],
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "provider": { "type": "string", "maxLength": 64 },
+        "source_instance": { "type": "string", "maxLength": 128 },
+        "connected_at": { "type": "string", "format": "date-time" },
+        "last_seen_at": { "type": "string", "format": "date-time" },
+        "stale": { "type": "boolean" }
+      }
+    },
+    "client": {
+      "type": "object",
+      "required": ["id", "state", "present", "connections", "first_seen_at", "last_seen_at"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^mac:[0-9a-f]{2}(:[0-9a-f]{2}){5}$"
+        },
+        "state": { "enum": ["present", "absent", "unknown"] },
+        "present": { "type": ["boolean", "null"] },
+        "connections": {
+          "type": "array",
+          "maxItems": 128,
+          "items": { "$ref": "#/$defs/connection" }
+        },
+        "first_seen_at": { "type": "string", "format": "date-time" },
+        "last_seen_at": { "type": "string", "format": "date-time" }
+      }
+    },
+    "snapshot": {
+      "type": "object",
+      "required": ["stream_epoch", "sequence", "generated_at", "clients"],
+      "properties": {
+        "stream_epoch": { "type": "string", "pattern": "^[0-9a-f]{32}$" },
+        "sequence": { "type": "integer", "minimum": 0 },
+        "generated_at": { "type": "string", "format": "date-time" },
+        "clients": {
+          "type": "array",
+          "maxItems": 100000,
+          "items": { "$ref": "#/$defs/client" }
+        }
+      }
+    },
+    "event": {
+      "type": "object",
+      "required": ["type", "event_id", "stream_epoch", "sequence", "timestamp"],
+      "properties": {
+        "type": { "type": "string", "maxLength": 64 },
+        "event_id": { "type": "string", "maxLength": 128 },
+        "stream_epoch": { "type": "string", "pattern": "^[0-9a-f]{32}$" },
+        "sequence": { "type": "integer", "minimum": 0 },
+        "timestamp": { "type": "string", "format": "date-time" },
+        "reason": { "type": "string", "maxLength": 128 },
+        "data": {}
+      }
+    }
+  },
+  "$ref": "#/$defs/event"
+}

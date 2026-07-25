@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">OpenWrt Presence</title>
+  <desc id="desc">A home formed from Wi-Fi signals with a green presence indicator.</desc>
+  <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <path
+      d="M68 242 230 113c15-12 37-12 52 0l162 129"
+      stroke="#01CFFF"
+      stroke-width="42"
+    />
+    <path
+      d="M113 431V319a143 112 0 0 1 286 0v112"
+      stroke="#01CFFF"
+      stroke-width="42"
+    />
+    <path
+      d="M176 313c44-42 116-42 160 0"
+      stroke="#01CFFF"
+      stroke-width="38"
+    />
+  </g>
+  <circle cx="256" cy="394" r="43" fill="#ACF906" />
+  <circle cx="241" cy="379" r="10" fill="#FFFFFF" />
+  <circle cx="228" cy="396" r="4.5" fill="#FFFFFF" />
+</svg>
