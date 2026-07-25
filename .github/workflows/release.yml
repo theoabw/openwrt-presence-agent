@@ -128,6 +128,10 @@ jobs:
           find bin -type f \( -name 'openwrt-presence-agent_*.ipk' -o -name 'openwrt-presence-agent-*.apk' \) \
             -exec cp '{}' dist/ \;
           test "$(find dist -type f | wc -l)" -eq 1
+          apk="$(find dist -maxdepth 1 -type f -name '*.apk' -print -quit)"
+          if [ -n "$apk" ]; then
+            mv "$apk" "${apk%.apk}-${{ matrix.arch }}.apk"
+          fi
       - uses: actions/upload-artifact@v7
         with:
           name: sdk-${{ matrix.openwrt }}-${{ matrix.arch }}
