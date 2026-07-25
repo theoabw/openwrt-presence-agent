@@ -22,6 +22,11 @@ jobs:
           go-version-file: go.mod
           cache: false
 
+      - name: Verify tag belongs to main
+        run: |
+          git fetch --no-tags origin main
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main
+
       - name: Verify release version
         id: version
         run: |
