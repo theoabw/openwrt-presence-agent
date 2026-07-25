@@ -22,6 +22,20 @@ jobs:
           go-version-file: go.mod
           cache: false
 
+      - name: Verify signed annotated tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag_object="$(
+            gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$GITHUB_REF_NAME" \
+              --jq '.object | select(.type == "tag") | .sha'
+          )"
+          test -n "$tag_object"
+          test "$(
+            gh api "repos/$GITHUB_REPOSITORY/git/tags/$tag_object" \
+              --jq '.verification.verified'
+          )" = true
+
       - name: Verify tag belongs to main
         run: |
           git fetch --no-tags origin main
