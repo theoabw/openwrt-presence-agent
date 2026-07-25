@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -25,6 +26,10 @@ func main() {
 }
 
 func run(args []string) int {
+	if len(args) == 1 && (args[0] == "--version" || args[0] == "-version") {
+		fmt.Printf("openwrt-presence-agent %s\n", version)
+		return 0
+	}
 	cfg, err := config.Parse(args)
 	if err != nil {
 		slog.Error("invalid configuration", "error", err)
