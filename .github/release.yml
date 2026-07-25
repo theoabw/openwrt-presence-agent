@@ -6,15 +6,30 @@ changelog:
     - title: Breaking changes
       labels:
         - breaking
+    - title: Security
+      labels:
+        - security
     - title: Features
       labels:
         - enhancement
     - title: Fixes
       labels:
         - bug
+    - title: Compatibility and testing
+      labels:
+        - router compatibility
+        - compatibility
+        - testing wanted
     - title: Documentation
       labels:
         - documentation
+    - title: Dependencies
+      labels:
+        - dependencies
+        - github_actions
+    - title: Maintenance
+      labels:
+        - maintenance
     - title: Other changes
       labels:
         - "*"
