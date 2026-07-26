@@ -32,8 +32,12 @@ start_instance() {
 	append_option "$section" agent_id_file --agent-id-file
 	append_option "$section" ubus_path --ubus-path
 	append_option "$section" hostapd_socket --hostapd-socket
+	append_option "$section" arping_path --arping-path
+	append_option "$section" dhcp_leases_file --dhcp-leases-file
+	append_option "$section" lan_interface --lan-interface
 	append_option "$section" provider --provider
 	append_option "$section" reconcile_interval --reconcile-interval
+	append_option "$section" wired_reconcile_interval --wired-reconcile-interval
 	append_option "$section" discovery_interval --discovery-interval
 	append_option "$section" command_timeout --command-timeout
 	append_option "$section" max_command_output --max-command-output

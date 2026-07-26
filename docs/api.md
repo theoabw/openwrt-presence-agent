@@ -11,9 +11,10 @@ is not evidence that no clients are connected. Check `GET /v1/health` and
 provider status before treating client state as provider-authoritative. Each
 client has provider-independent connections and a derived state:
 
-- `present` / `present: true`: at least one current Wi-Fi connection exists;
+- `present` / `present: true`: at least one current Wi-Fi connection or freshly
+  confirmed Ethernet connection exists;
 - `absent` / `present: false`: an authoritative snapshot or scoped event
-  established that no discovered Wi-Fi connection remains;
+  established that no discovered connection remains;
 - `unknown` / `present: null`: provider failure made the retained evidence
   uncertain.
 

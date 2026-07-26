@@ -12,8 +12,12 @@ script converts each option to an explicit daemon argument.
 | `agent_id_file` | `/etc/openwrt-presence-agent/agent-id` | Absolute stable-ID path. |
 | `ubus_path` | `/bin/ubus` | Absolute path to the local ubus client. |
 | `hostapd_socket` | `/var/run/hostapd/global` | Absolute path to the hostapd global control socket. |
+| `arping_path` | `/usr/sbin/arping` | Absolute path to the packaged active ARP probe. |
+| `dhcp_leases_file` | `/tmp/dhcp.leases` | Absolute dnsmasq lease file used to find wired probe candidates. |
+| `lan_interface` | `br-lan` | Interface on which wired clients are probed. |
 | `provider` | `ubus` | Only implemented provider. |
 | `reconcile_interval` | `30s` | At least one second. |
+| `wired_reconcile_interval` | `2s` | Active Ethernet probe cycle; at least one second. |
 | `discovery_interval` | `10s` | At least one second. |
 | `command_timeout` | `5s` | At least one second. |
 | `max_command_output` | `1048576` | 4 KiB–16 MiB. |
@@ -28,6 +32,31 @@ script converts each option to an explicit daemon argument.
 Invalid values stop startup with a clear error. The listener deliberately does
 not derive or guess a LAN address: ambiguous automatic binding falls back to
 loopback through the packaged default.
+
+Ethernet presence is intentionally stricter than lease or stale neighbor-table
+presence. A fresh Linux `NUD_REACHABLE` IP-neighbor notification can mark a
+wired client present immediately. Every `wired_reconcile_interval`, the agent
+also sends one ARP request to each eligible leased address on `lan_interface`;
+a fresh reply confirms presence and the completed sweep confirms absence. An
+unexpired DHCP lease, stale/failed neighbor entry, or bridge forwarding entry
+never counts as online.
+
+The two-second default provides approximately one-second average sampling
+delay. Offline detection can additionally require the roughly one-second ARP
+timeout, so its practical worst case is about three seconds plus scheduling
+overhead. Wake detection can be faster when the client generates a fresh
+neighbor event, but operating-system and NIC resume time remains outside the
+agent's control. Static-address clients need a dnsmasq lease/reservation for
+active probing, although fresh kernel neighbor events can discover them while
+they are communicating.
+
+Clients currently associated with any hostapd BSS are excluded before wired
+probes are launched. Their presence remains entirely event-driven, so the wired
+fallback cannot add latency to Wi-Fi disconnects or local roaming.
+On startup, wired probing waits for either the first authoritative hostapd
+snapshot or a definitive Wi-Fi-unavailable status. This prevents an initial
+wired sweep from racing the Wi-Fi exclusion inventory without blocking
+Ethernet indefinitely on a router with unusable radios.
 
 ## Token handling
 

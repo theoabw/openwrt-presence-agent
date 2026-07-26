@@ -15,6 +15,11 @@ changes, the connection closes, or a sequence gap is detected. Consumers must
 also check health and provider status before treating that state as
 provider-authoritative.
 
+`GET /v1/info` advertises separate `wifi_snapshot`, `wifi_events`,
+`wired_snapshot`, and `wired_events` capabilities. Wired events include fresh
+Linux route-neighbor reachability and active ARP replies; wired snapshots are
+the authoritative active-probe reconciliation.
+
 Timestamps are UTC RFC 3339 values. Client IDs use the form
 `mac:aa:bb:cc:dd:ee:ff`. The nullable `present` field is `null` when provider
 failure makes state uncertain.

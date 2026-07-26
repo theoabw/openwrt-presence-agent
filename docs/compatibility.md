@@ -8,7 +8,11 @@ The initial provider requires:
 - a `get_clients` method on each discovered object; and
 - a hostapd global control socket, `/var/run/hostapd/global` by default, that accepts
   `ATTACH` and emits `IFNAME`-scoped `AP-STA-CONNECTED` and
-  `AP-STA-DISCONNECTED` events.
+  `AP-STA-DISCONNECTED` events;
+- an `arping` executable, `/usr/sbin/arping` by default;
+- a dnsmasq-compatible lease file, `/tmp/dhcp.leases` by default; and
+- a LAN interface, `br-lan` by default, supporting ARP and Linux route-netlink
+  neighbor notifications.
 
 The daemon enumerates objects and never requires configured radio or interface
 names. Event `IFNAME` values are accepted only when they match a currently
@@ -16,8 +20,8 @@ discovered `hostapd.*` object. It deliberately does not call broad
 wireless-status methods because some vendor firmware includes plaintext
 wireless keys in those responses.
 
-Both paths are configurable with `ubus_path` and `hostapd_socket`; this avoids
-requiring vendor firmware to use the vanilla filesystem layout.
+The command, socket, lease-file, and LAN-interface paths are configurable; this
+avoids requiring vendor firmware to use the vanilla filesystem layout.
 
 The provider intentionally uses two local hostapd interfaces: ubus provides
 structured discovery and authoritative snapshots, while the standard hostapd
@@ -56,9 +60,12 @@ router as hardware-tested based solely on this matrix.
 | GL.iNet Flint 3 (`GL-BE9300`) | 4.9.0 | `23.05-SNAPSHOT` | `5.4.213` | `ipq53xx/generic` | `aarch64_cortex-a53_neon-vfpv4` |
 
 Package installation, `procd` startup, dynamic discovery across all active BSS
-instances, authoritative snapshots, low-latency association and disassociation
-events, API consumption, observer restart, and wireless reload have been
-verified on this platform.
+instances, authoritative Wi-Fi and wired snapshots, low-latency Wi-Fi events,
+wired sleep/wake cycles, Wi-Fi exclusion from wired probes, API consumption,
+observer restart, and wireless reload have been verified on this platform.
+The wired tests used `br-lan`, dnsmasq leases, active ARP, and kernel
+route-neighbor notifications. Their observed timing is platform evidence, not a
+guarantee for other switches, NICs, or operating systems.
 
 This is currently the complete hardware-tested list. In particular, the Flint
 2 has not been live-tested by the project. Availability of a matching SDK-built
@@ -83,6 +90,8 @@ hostnames, and other identifying data. Include:
 - whether installation and `procd` startup succeeded;
 - whether initial snapshots, association, disassociation, and local roaming
   were observed;
+- whether wired sleep, wake, power-off, and cable removal were detected, and
+  which LAN bridge/interface and lease service were used;
 - whether reconnecting a consumer, restarting the observer, and reloading
   wireless recovered correctly; and
 - any sanitized errors, alternate socket paths, or provider behavior.
@@ -101,6 +110,12 @@ HTTP 503 from `/v1/health` means no authoritative snapshot is available. Check
 `/v1/providers` and logs for missing objects, missing `get_clients`, ubus
 permissions, hostapd global-socket access, timeouts, malformed responses, or
 configured output limits.
+
+A degraded or unavailable `wired-arp` provider indicates that the configured
+lease file, LAN interface, or `arping` executable could not be used. A working
+netlink event listener accelerates positive detection but is not required for
+correctness; the active snapshot remains the recovery path. Static-address
+clients should have a dnsmasq reservation so they remain eligible for probes.
 
 An overall `status: degraded` means the API retains a prior snapshot but
 provider evidence is currently uncertain. The provider keeps rediscovering,

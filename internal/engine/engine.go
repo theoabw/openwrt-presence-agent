@@ -21,7 +21,7 @@ type Limits struct {
 
 func (e *Engine) Apply(value observation.Observation) error {
 	switch value.Kind {
-	case observation.WiFiAssociated:
+	case observation.WiFiAssociated, observation.WiredReachable:
 		return e.Associate(value.Provider, value.SourceInstance, value.ClientID, value.ReceivedAt, "provider_event")
 	case observation.WiFiDisassociated:
 		e.Disassociate(value.Provider, value.SourceInstance, value.ClientID, value.ReceivedAt, "provider_event")

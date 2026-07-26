@@ -43,9 +43,11 @@ func TestV1ContractFixtureMatchesPublicTypes(t *testing.T) {
 		t.Fatalf("invalid info fixture: %#v", fixture.Info)
 	}
 	required := map[string]bool{
-		"wifi_snapshot": false,
-		"wifi_events":   false,
-		"websocket":     false,
+		"wifi_snapshot":  false,
+		"wifi_events":    false,
+		"wired_snapshot": false,
+		"wired_events":   false,
+		"websocket":      false,
 	}
 	for _, capability := range fixture.Info.Capabilities {
 		if _, ok := required[capability]; ok {
@@ -57,7 +59,7 @@ func TestV1ContractFixtureMatchesPublicTypes(t *testing.T) {
 			t.Fatalf("fixture missing capability %q", capability)
 		}
 	}
-	if len(fixture.Snapshot.Clients) != 1 || len(fixture.Events) != 3 {
+	if len(fixture.Snapshot.Clients) != 2 || len(fixture.Events) != 3 {
 		t.Fatalf("fixture shape = %d clients, %d events", len(fixture.Snapshot.Clients), len(fixture.Events))
 	}
 	if fixture.Events[0].Type != "stream.hello" ||

@@ -12,24 +12,28 @@ import (
 )
 
 type Config struct {
-	ListenAddress      string
-	Port               int
-	TokenFile          string
-	AgentIDFile        string
-	UbusPath           string
-	HostapdSocket      string
-	Provider           string
-	ReconcileInterval  time.Duration
-	DiscoveryInterval  time.Duration
-	CommandTimeout     time.Duration
-	MaxCommandOutput   int64
-	MaxEventBytes      int
-	MaxClients         int
-	MaxHTTPConnections int
-	ProviderQueueSize  int
-	MaxStreamClients   int
-	StreamQueueSize    int
-	LogLevel           string
+	ListenAddress          string
+	Port                   int
+	TokenFile              string
+	AgentIDFile            string
+	UbusPath               string
+	HostapdSocket          string
+	ArpingPath             string
+	DHCPLeasesFile         string
+	LANInterface           string
+	Provider               string
+	ReconcileInterval      time.Duration
+	WiredReconcileInterval time.Duration
+	DiscoveryInterval      time.Duration
+	CommandTimeout         time.Duration
+	MaxCommandOutput       int64
+	MaxEventBytes          int
+	MaxClients             int
+	MaxHTTPConnections     int
+	ProviderQueueSize      int
+	MaxStreamClients       int
+	StreamQueueSize        int
+	LogLevel               string
 }
 
 func Default() Config {
@@ -39,9 +43,13 @@ func Default() Config {
 		AgentIDFile:       "/etc/openwrt-presence-agent/agent-id",
 		UbusPath:          "/bin/ubus",
 		HostapdSocket:     "/var/run/hostapd/global",
+		ArpingPath:        "/usr/sbin/arping",
+		DHCPLeasesFile:    "/tmp/dhcp.leases",
+		LANInterface:      "br-lan",
 		Provider:          "ubus",
-		ReconcileInterval: 30 * time.Second, DiscoveryInterval: 10 * time.Second,
-		CommandTimeout: 5 * time.Second, MaxCommandOutput: 1024 * 1024,
+		ReconcileInterval: 30 * time.Second, WiredReconcileInterval: 2 * time.Second,
+		DiscoveryInterval: 10 * time.Second,
+		CommandTimeout:    5 * time.Second, MaxCommandOutput: 1024 * 1024,
 		MaxEventBytes: 64 * 1024, MaxClients: 512,
 		MaxHTTPConnections: 16, ProviderQueueSize: 256,
 		MaxStreamClients: 4, StreamQueueSize: 64, LogLevel: "info",
@@ -57,8 +65,12 @@ func Parse(args []string) (Config, error) {
 	fs.StringVar(&c.AgentIDFile, "agent-id-file", c.AgentIDFile, "stable agent identity file")
 	fs.StringVar(&c.UbusPath, "ubus-path", c.UbusPath, "absolute ubus executable path")
 	fs.StringVar(&c.HostapdSocket, "hostapd-socket", c.HostapdSocket, "absolute hostapd global control socket path")
+	fs.StringVar(&c.ArpingPath, "arping-path", c.ArpingPath, "absolute arping executable path")
+	fs.StringVar(&c.DHCPLeasesFile, "dhcp-leases-file", c.DHCPLeasesFile, "absolute dnsmasq leases file path")
+	fs.StringVar(&c.LANInterface, "lan-interface", c.LANInterface, "LAN interface used for Ethernet reachability probes")
 	fs.StringVar(&c.Provider, "provider", c.Provider, "observation provider")
 	fs.DurationVar(&c.ReconcileInterval, "reconcile-interval", c.ReconcileInterval, "snapshot reconciliation interval")
+	fs.DurationVar(&c.WiredReconcileInterval, "wired-reconcile-interval", c.WiredReconcileInterval, "active Ethernet reconciliation interval")
 	fs.DurationVar(&c.DiscoveryInterval, "discovery-interval", c.DiscoveryInterval, "object discovery interval")
 	fs.DurationVar(&c.CommandTimeout, "command-timeout", c.CommandTimeout, "ubus call timeout")
 	fs.Int64Var(&c.MaxCommandOutput, "max-command-output", c.MaxCommandOutput, "maximum ubus response bytes")
@@ -97,10 +109,20 @@ func (c Config) Validate() error {
 	if c.HostapdSocket == "" || c.HostapdSocket[0] != '/' {
 		return fmt.Errorf("hostapd-socket must be an absolute path")
 	}
+	if c.ArpingPath == "" || c.ArpingPath[0] != '/' {
+		return fmt.Errorf("arping-path must be an absolute path")
+	}
+	if c.DHCPLeasesFile == "" || c.DHCPLeasesFile[0] != '/' {
+		return fmt.Errorf("dhcp-leases-file must be an absolute path")
+	}
+	if c.LANInterface == "" || strings.ContainsAny(c.LANInterface, " \t\r\n/") {
+		return fmt.Errorf("lan-interface must be a valid interface name")
+	}
 	if c.Provider != "ubus" {
 		return fmt.Errorf("unsupported provider %q", c.Provider)
 	}
-	if c.ReconcileInterval < time.Second || c.DiscoveryInterval < time.Second || c.CommandTimeout < time.Second {
+	if c.ReconcileInterval < time.Second || c.WiredReconcileInterval < time.Second ||
+		c.DiscoveryInterval < time.Second || c.CommandTimeout < time.Second {
 		return fmt.Errorf("timeouts and intervals must be at least 1s")
 	}
 	if c.MaxCommandOutput < 4096 || c.MaxCommandOutput > 16*1024*1024 {

@@ -8,6 +8,7 @@ type Kind string
 const (
 	WiFiAssociated    Kind = "wifi.associated"
 	WiFiDisassociated Kind = "wifi.disassociated"
+	WiredReachable    Kind = "wired.reachable"
 )
 
 type Confidence string

@@ -9,6 +9,7 @@ import (
 	"github.com/theoabw/openwrt-presence-agent/internal/config"
 	"github.com/theoabw/openwrt-presence-agent/internal/observation"
 	"github.com/theoabw/openwrt-presence-agent/internal/providers/ubus"
+	"github.com/theoabw/openwrt-presence-agent/internal/providers/wired"
 )
 
 // Provider publishes normalized observations until its context is canceled.
@@ -20,7 +21,8 @@ type Provider interface {
 func New(c config.Config, sink observation.Sink, logger *slog.Logger) (Provider, error) {
 	switch c.Provider {
 	case "ubus":
-		return ubus.New(ubus.Config{
+		wifiClients := newWiFiAssociations(sink)
+		wifi := ubus.New(ubus.Config{
 			UbusPath:          c.UbusPath,
 			HostapdSocket:     c.HostapdSocket,
 			ReconcileInterval: c.ReconcileInterval,
@@ -30,8 +32,51 @@ func New(c config.Config, sink observation.Sink, logger *slog.Logger) (Provider,
 			MaxEventBytes:     c.MaxEventBytes,
 			MaxClients:        c.MaxClients,
 			QueueSize:         c.ProviderQueueSize,
-		}, sink, logger), nil
+		}, wifiClients, logger)
+		ethernet := wired.New(wired.Config{
+			ArpingPath: c.ArpingPath, LeasesFile: c.DHCPLeasesFile,
+			Interface: c.LANInterface, Interval: c.WiredReconcileInterval,
+			CommandTimeout: c.CommandTimeout, MaxClients: c.MaxClients,
+			Excluded: wifiClients.Contains,
+		}, sink, logger)
+		return group{wifi, waitFor(wifiClients.Ready(), ethernet)}, nil
 	default:
 		return nil, fmt.Errorf("unsupported provider %q", c.Provider)
 	}
+}
+
+type group []Provider
+
+type gatedProvider struct {
+	ready    <-chan struct{}
+	provider Provider
+}
+
+func waitFor(ready <-chan struct{}, provider Provider) Provider {
+	return gatedProvider{ready: ready, provider: provider}
+}
+
+func (p gatedProvider) Run(ctx context.Context) error {
+	select {
+	case <-ctx.Done():
+		return nil
+	case <-p.ready:
+		return p.provider.Run(ctx)
+	}
+}
+
+func (g group) Run(ctx context.Context) error {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	results := make(chan error, len(g))
+	for _, provider := range g {
+		go func(p Provider) { results <- p.Run(ctx) }(provider)
+	}
+	for range g {
+		if err := <-results; err != nil {
+			cancel()
+			return err
+		}
+	}
+	return nil
 }

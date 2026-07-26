@@ -76,7 +76,10 @@ func (s *Server) info(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"name": "openwrt-presence-agent", "protocol_version": protocol.Version,
 		"agent_id": s.agentID, "version": s.version,
-		"capabilities": []string{"wifi_snapshot", "wifi_events", "websocket"},
+		"capabilities": []string{
+			"wifi_snapshot", "wifi_events",
+			"wired_snapshot", "wired_events", "websocket",
+		},
 	})
 }
 
@@ -126,15 +129,17 @@ func (s *Server) diagnostics(w http.ResponseWriter, _ *http.Request) {
 		"uptime_seconds": int64(time.Since(s.startedAt).Seconds()),
 		"listener":       map[string]any{"address": s.config.ListenAddress, "port": s.config.Port},
 		"configuration": map[string]any{
-			"provider":             s.config.Provider,
-			"reconcile_interval":   s.config.ReconcileInterval.String(),
-			"discovery_interval":   s.config.DiscoveryInterval.String(),
-			"max_clients":          s.config.MaxClients,
-			"max_http_connections": s.config.MaxHTTPConnections,
-			"provider_queue_size":  s.config.ProviderQueueSize,
-			"max_stream_clients":   s.config.MaxStreamClients,
-			"stream_queue_size":    s.config.StreamQueueSize,
-			"authentication":       "bearer",
+			"provider":                 s.config.Provider,
+			"reconcile_interval":       s.config.ReconcileInterval.String(),
+			"wired_reconcile_interval": s.config.WiredReconcileInterval.String(),
+			"discovery_interval":       s.config.DiscoveryInterval.String(),
+			"lan_interface":            s.config.LANInterface,
+			"max_clients":              s.config.MaxClients,
+			"max_http_connections":     s.config.MaxHTTPConnections,
+			"provider_queue_size":      s.config.ProviderQueueSize,
+			"max_stream_clients":       s.config.MaxStreamClients,
+			"stream_queue_size":        s.config.StreamQueueSize,
+			"authentication":           "bearer",
 		},
 		"providers": s.engine.Providers(), "state": s.engine.Stats(),
 		"authentication_failures": s.auth.Failures(),

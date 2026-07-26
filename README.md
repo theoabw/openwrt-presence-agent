@@ -6,11 +6,12 @@
 
 **A fast, read-only client observation service for OpenWrt.**
 
-OpenWrt Presence Agent turns local `hostapd` association changes into a
-normalized, authenticated API that trusted local applications can consume
-without receiving router administration access. The normal update path is
-push-based; bounded authoritative `get_clients` snapshots repair missed events
-and confirm departures.
+OpenWrt Presence Agent turns local Wi-Fi association and wired reachability
+changes into a normalized, authenticated API that trusted local applications
+can consume without receiving router administration access. Wi-Fi uses
+push-based hostapd events. Ethernet combines fresh Linux neighbor events with
+bounded active ARP reconciliation so stale leases and neighbor entries do not
+count as presence.
 
 The official
 [OpenWrt Presence integration](https://github.com/theoabw/ha-openwrt-presence)
@@ -32,16 +33,16 @@ dashboards, automation systems, monitoring, or purpose-built integrations.
 > whether it works fully, partly, or not at all. Even a short report is useful.
 
 > [!TIP]
-> **Across 110 measured Flint 3 transitions, every observer event reached the
-> reference Home Assistant consumer in under 20 ms:** 6.5 ms median, 15.9 ms
+> **Across 110 measured Flint 3 Wi-Fi transitions, every observer event reached
+> the reference Home Assistant consumer in under 20 ms:** 6.5 ms median, 15.9 ms
 > p99, and 17.2 ms maximum. The larger 100-transition run stayed under 13 ms.
 > During that run the observer used about 10.4 MiB RSS and 0.20% process CPU.
 > See the [methodology, boundaries, and sanitized results](docs/performance.md).
 
 ## Why a dedicated client observation service?
 
-- **Low latency:** hostapd events enter the state engine without a router or
-  consumer polling wait.
+- **Low latency:** hostapd and fresh wired-neighbor events enter the state
+  engine without a consumer polling wait.
 - **Consumer-neutral:** stable JSON snapshots and ordered WebSocket events are
   independent of any automation platform.
 - **Small security boundary:** authenticated read-only snapshots and events;
@@ -59,7 +60,7 @@ dashboards, automation systems, monitoring, or purpose-built integrations.
 
 | Approach | Router work | Detection behavior |
 |---|---|---|
-| **OpenWrt Presence Agent** | Lightweight event subscriber plus corrective snapshots | Association changes are pushed immediately |
+| **OpenWrt Presence Agent** | Lightweight event subscribers plus corrective Wi-Fi and ARP snapshots | Wi-Fi changes and fresh wired reachability are pushed; wired absence is actively confirmed |
 | Ping presence | Repeated ICMP probes | Detection waits for a probe and depends on sleeping clients answering |
 | Router polling | Repeated remote table/API reads | Detection waits for the next consumer polling interval |
 | General router management integration | Broad monitoring and control surface | Presence is one feature among many rather than the security boundary |
@@ -104,7 +105,10 @@ a home network the user trusts and controls.
 flowchart LR
     A[hostapd global control socket] -->|associate / disconnect| B[Provider]
     C[ubus get_clients] -.->|authoritative snapshots| B
+    H[Linux neighbor events] -->|fresh wired reachability| I[Wired provider]
+    J[Bounded ARP probes] -.->|authoritative wired snapshot| I
     B --> D[Bounded state engine]
+    I --> D
     D -->|snapshot + ordered events| E[Authenticated HTTP / WebSocket API]
     E --> F[Home Assistant integration]
     E --> G[Other trusted local consumers]
@@ -114,12 +118,19 @@ A Wi-Fi disassociation removes one BSS connection; a client remains present
 while connected to another discovered BSS. Provider failure creates uncertainty
 instead of synthetic absence.
 
+The wired provider excludes MAC addresses currently associated through
+hostapd. Fresh `NUD_REACHABLE` IP-neighbor events can report a wired client
+immediately; a two-second active ARP cycle confirms presence and absence when
+events are silent or missed.
+
 ## Current implementation
 
 - dynamic discovery of all `hostapd.*` ubus objects;
 - bounded, fixed-command `/bin/ubus` discovery and snapshots;
 - bounded hostapd global-control event input;
 - immediate association/disassociation delivery;
+- event-assisted wired reachability with bounded concurrent ARP confirmation;
+- startup ordering and MAC filtering that keep Wi-Fi clients off the wired path;
 - periodic and recovery-triggered authoritative reconciliation;
 - bounded client state and slow-consumer disconnection;
 - authenticated, read-only REST snapshots and WebSocket events;

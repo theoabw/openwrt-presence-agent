@@ -8,7 +8,6 @@ import (
 
 	"github.com/theoabw/openwrt-presence-agent/internal/config"
 	"github.com/theoabw/openwrt-presence-agent/internal/engine"
-	"github.com/theoabw/openwrt-presence-agent/internal/providers/ubus"
 )
 
 func TestNewSelectsUbusProvider(t *testing.T) {
@@ -20,7 +19,7 @@ func TestNewSelectsUbusProvider(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := provider.(*ubus.Provider); !ok {
+	if providers, ok := provider.(group); !ok || len(providers) != 2 {
 		t.Fatalf("New() returned %T", provider)
 	}
 }

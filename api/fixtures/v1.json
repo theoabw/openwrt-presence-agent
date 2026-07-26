@@ -6,7 +6,13 @@
     "protocol_version": "v1",
     "agent_id": "00112233445566778899aabbccddeeff",
     "version": "fixture",
-    "capabilities": ["wifi_snapshot", "wifi_events", "websocket"]
+    "capabilities": [
+      "wifi_snapshot",
+      "wifi_events",
+      "wired_snapshot",
+      "wired_events",
+      "websocket"
+    ]
   },
   "snapshot": {
     "stream_epoch": "ffeeddccbbaa99887766554433221100",
@@ -22,6 +28,23 @@
             "id": "ubus:hostapd.wlan0",
             "provider": "ubus",
             "source_instance": "hostapd.wlan0",
+            "connected_at": "2026-07-23T12:00:00Z",
+            "last_seen_at": "2026-07-23T12:00:00Z",
+            "stale": false
+          }
+        ],
+        "first_seen_at": "2026-07-23T12:00:00Z",
+        "last_seen_at": "2026-07-23T12:00:00Z"
+      },
+      {
+        "id": "mac:02:00:00:00:00:02",
+        "state": "present",
+        "present": true,
+        "connections": [
+          {
+            "id": "wired-arp:br-lan",
+            "provider": "wired-arp",
+            "source_instance": "br-lan",
             "connected_at": "2026-07-23T12:00:00Z",
             "last_seen_at": "2026-07-23T12:00:00Z",
             "stale": false
@@ -61,6 +84,23 @@
                 "id": "ubus:hostapd.wlan0",
                 "provider": "ubus",
                 "source_instance": "hostapd.wlan0",
+                "connected_at": "2026-07-23T12:00:00Z",
+                "last_seen_at": "2026-07-23T12:00:00Z",
+                "stale": false
+              }
+            ],
+            "first_seen_at": "2026-07-23T12:00:00Z",
+            "last_seen_at": "2026-07-23T12:00:00Z"
+          },
+          {
+            "id": "mac:02:00:00:00:00:02",
+            "state": "present",
+            "present": true,
+            "connections": [
+              {
+                "id": "wired-arp:br-lan",
+                "provider": "wired-arp",
+                "source_instance": "br-lan",
                 "connected_at": "2026-07-23T12:00:00Z",
                 "last_seen_at": "2026-07-23T12:00:00Z",
                 "stale": false
