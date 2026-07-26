@@ -17,6 +17,7 @@ script converts each option to an explicit daemon argument.
 | `lan_interface` | `br-lan` | Interface on which wired clients are probed. |
 | `provider` | `ubus` | Only implemented provider. |
 | `reconcile_interval` | `30s` | At least one second. |
+| `wired_reconcile_interval` | `2s` | Active Ethernet probe cycle; at least one second. |
 | `discovery_interval` | `10s` | At least one second. |
 | `command_timeout` | `5s` | At least one second. |
 | `max_command_output` | `1048576` | 4 KiB–16 MiB. |
@@ -33,12 +34,14 @@ not derive or guess a LAN address: ambiguous automatic binding falls back to
 loopback through the packaged default.
 
 Ethernet presence is intentionally stricter than lease or neighbor-table
-presence. Every `reconcile_interval`, the agent sends one ARP request to each
+presence. Every `wired_reconcile_interval`, the agent sends one ARP request to each
 leased address on `lan_interface`. Only a fresh reply counts as online. An
 unexpired DHCP lease, or a stale kernel neighbor entry, never does. Consequently
 a sleeping, unplugged, or powered-off wired client becomes absent after the
-next reconciliation (30 seconds by default). Static-address clients need a
-dnsmasq lease/reservation so the agent has an address to probe.
+next reconciliation. The two-second default provides approximately one-second
+average and two-second worst-case detection, plus probe and scheduling time.
+Static-address clients need a dnsmasq lease/reservation so the agent has an
+address to probe.
 
 ## Token handling
 

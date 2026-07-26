@@ -34,7 +34,7 @@ func New(c config.Config, sink observation.Sink, logger *slog.Logger) (Provider,
 		}, sink, logger)
 		ethernet := wired.New(wired.Config{
 			ArpingPath: c.ArpingPath, LeasesFile: c.DHCPLeasesFile,
-			Interface: c.LANInterface, Interval: c.ReconcileInterval,
+			Interface: c.LANInterface, Interval: c.WiredReconcileInterval,
 			CommandTimeout: c.CommandTimeout, MaxClients: c.MaxClients,
 		}, sink, logger)
 		return group{wifi, ethernet}, nil
