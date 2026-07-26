@@ -27,6 +27,7 @@ type Config struct {
 	ArpingPath, LeasesFile, Interface string
 	Interval, CommandTimeout          time.Duration
 	MaxClients                        int
+	Excluded                          func(string) bool
 }
 
 type Provider struct {
@@ -96,6 +97,15 @@ func (p *Provider) snapshot(parent context.Context) (time.Time, error) {
 	if err != nil {
 		return time.Time{}, fmt.Errorf("parse DHCP leases: %w", err)
 	}
+	if p.config.Excluded != nil {
+		filtered := leases[:0]
+		for _, candidate := range leases {
+			if !p.config.Excluded(candidate.mac) {
+				filtered = append(filtered, candidate)
+			}
+		}
+		leases = filtered
+	}
 
 	type result struct {
 		id        string
@@ -128,7 +138,8 @@ func (p *Provider) snapshot(parent context.Context) (time.Time, error) {
 
 	clients := make([]string, 0, len(leases))
 	for result := range results {
-		if !result.reachable {
+		if !result.reachable ||
+			(p.config.Excluded != nil && p.config.Excluded(result.id)) {
 			continue
 		}
 		clients = append(clients, result.id)

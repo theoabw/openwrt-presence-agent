@@ -138,6 +138,37 @@ func TestReachableClientIsPublishedBeforeSlowSweepCompletes(t *testing.T) {
 	}
 }
 
+func TestSnapshotDoesNotProbeExcludedWiFiClient(t *testing.T) {
+	dir := t.TempDir()
+	leases := filepath.Join(dir, "leases")
+	probe := filepath.Join(dir, "arping")
+	if err := os.WriteFile(leases, []byte(
+		"1 00:00:00:00:00:01 192.168.1.10 wifi *\n",
+	), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(probe, []byte("#!/bin/sh\nexit 0\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	state, err := engine.New(engine.Limits{MaxClients: 10, MaxSubscribers: 1, QueueSize: 4})
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider := New(Config{
+		ArpingPath: probe, LeasesFile: leases, Interface: "br-lan",
+		Interval: time.Second, CommandTimeout: time.Second, MaxClients: 10,
+		Excluded: func(id string) bool {
+			return id == "mac:00:00:00:00:00:01"
+		},
+	}, state, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if _, err := provider.snapshot(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := state.Client("mac:00:00:00:00:00:01"); ok {
+		t.Fatal("excluded Wi-Fi client was published by wired provider")
+	}
+}
+
 func TestParseLeasesBound(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "leases")
 	if err := os.WriteFile(path, []byte(

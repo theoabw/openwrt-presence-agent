@@ -21,6 +21,7 @@ type Provider interface {
 func New(c config.Config, sink observation.Sink, logger *slog.Logger) (Provider, error) {
 	switch c.Provider {
 	case "ubus":
+		wifiClients := newWiFiAssociations(sink)
 		wifi := ubus.New(ubus.Config{
 			UbusPath:          c.UbusPath,
 			HostapdSocket:     c.HostapdSocket,
@@ -31,11 +32,12 @@ func New(c config.Config, sink observation.Sink, logger *slog.Logger) (Provider,
 			MaxEventBytes:     c.MaxEventBytes,
 			MaxClients:        c.MaxClients,
 			QueueSize:         c.ProviderQueueSize,
-		}, sink, logger)
+		}, wifiClients, logger)
 		ethernet := wired.New(wired.Config{
 			ArpingPath: c.ArpingPath, LeasesFile: c.DHCPLeasesFile,
 			Interface: c.LANInterface, Interval: c.WiredReconcileInterval,
 			CommandTimeout: c.CommandTimeout, MaxClients: c.MaxClients,
+			Excluded: wifiClients.Contains,
 		}, sink, logger)
 		return group{wifi, ethernet}, nil
 	default:

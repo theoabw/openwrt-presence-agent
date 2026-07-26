@@ -43,6 +43,10 @@ average and two-second worst-case detection, plus probe and scheduling time.
 Static-address clients need a dnsmasq lease/reservation so the agent has an
 address to probe.
 
+Clients currently associated with any hostapd BSS are excluded before wired
+probes are launched. Their presence remains entirely event-driven, so the wired
+fallback cannot add latency to Wi-Fi disconnects or local roaming.
+
 ## Token handling
 
 Read the token only into a trusted client:
