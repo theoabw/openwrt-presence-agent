@@ -5,6 +5,14 @@ software combinations, not guarantees for every OpenWrt or Home Assistant
 installation. The scripts under `scripts/performance/` are the source of truth
 for reproducing the methodology.
 
+The published aggregate latency results below cover the Wi-Fi event path.
+Ethernet uses a different hybrid path: fresh Linux neighbor events may report
+reachability immediately, while a two-second ARP cycle and approximately
+one-second failure timeout bound silent-client reconciliation. End-to-end wired
+wake time also includes operating-system, firmware, and NIC readiness. No
+aggregate wired latency benchmark is published yet; controlled Flint 3
+sleep/wake testing established functional behavior only.
+
 ## July 2026 measurement
 
 The first measured baseline used commit

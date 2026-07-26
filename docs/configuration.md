@@ -33,19 +33,30 @@ Invalid values stop startup with a clear error. The listener deliberately does
 not derive or guess a LAN address: ambiguous automatic binding falls back to
 loopback through the packaged default.
 
-Ethernet presence is intentionally stricter than lease or neighbor-table
-presence. Every `wired_reconcile_interval`, the agent sends one ARP request to each
-leased address on `lan_interface`. Only a fresh reply counts as online. An
-unexpired DHCP lease, or a stale kernel neighbor entry, never does. Consequently
-a sleeping, unplugged, or powered-off wired client becomes absent after the
-next reconciliation. The two-second default provides approximately one-second
-average and two-second worst-case detection, plus probe and scheduling time.
-Static-address clients need a dnsmasq lease/reservation so the agent has an
-address to probe.
+Ethernet presence is intentionally stricter than lease or stale neighbor-table
+presence. A fresh Linux `NUD_REACHABLE` IP-neighbor notification can mark a
+wired client present immediately. Every `wired_reconcile_interval`, the agent
+also sends one ARP request to each eligible leased address on `lan_interface`;
+a fresh reply confirms presence and the completed sweep confirms absence. An
+unexpired DHCP lease, stale/failed neighbor entry, or bridge forwarding entry
+never counts as online.
+
+The two-second default provides approximately one-second average sampling
+delay. Offline detection can additionally require the roughly one-second ARP
+timeout, so its practical worst case is about three seconds plus scheduling
+overhead. Wake detection can be faster when the client generates a fresh
+neighbor event, but operating-system and NIC resume time remains outside the
+agent's control. Static-address clients need a dnsmasq lease/reservation for
+active probing, although fresh kernel neighbor events can discover them while
+they are communicating.
 
 Clients currently associated with any hostapd BSS are excluded before wired
 probes are launched. Their presence remains entirely event-driven, so the wired
 fallback cannot add latency to Wi-Fi disconnects or local roaming.
+On startup, wired probing waits for either the first authoritative hostapd
+snapshot or a definitive Wi-Fi-unavailable status. This prevents an initial
+wired sweep from racing the Wi-Fi exclusion inventory without blocking
+Ethernet indefinitely on a router with unusable radios.
 
 ## Token handling
 

@@ -115,9 +115,11 @@ provides the intended version.
 
 Stopping and restarting creates a new stream epoch and a new internally
 consistent initial stream snapshot. Provider reconciliation establishes
-authoritative Wi-Fi state after startup. Provider failures are retried inside
-the daemon; `procd` applies a bounded respawn policy if the whole process fails.
-UCI changes restart the service through a reload trigger.
+authoritative Wi-Fi and wired state after startup. Wired probing begins after
+the initial Wi-Fi inventory is available, so associated Wi-Fi clients are not
+duplicated as Ethernet connections. Provider failures are retried inside the
+daemon; `procd` applies a bounded respawn policy if the whole process fails. UCI
+changes restart the service through a reload trigger.
 
 Normal package removal follows OpenWrt conffile policy and preserves modified
 configuration:

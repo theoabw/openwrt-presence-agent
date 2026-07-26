@@ -157,7 +157,9 @@ components:
           required:
             - provider
             - reconcile_interval
+            - wired_reconcile_interval
             - discovery_interval
+            - lan_interface
             - max_clients
             - max_http_connections
             - provider_queue_size
@@ -167,7 +169,9 @@ components:
           properties:
             provider: { const: ubus }
             reconcile_interval: { type: string }
+            wired_reconcile_interval: { type: string }
             discovery_interval: { type: string }
+            lan_interface: { type: string }
             max_clients: { type: integer, minimum: 1 }
             max_http_connections: { type: integer, minimum: 1 }
             provider_queue_size: { type: integer, minimum: 1 }

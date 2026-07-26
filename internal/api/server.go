@@ -76,7 +76,10 @@ func (s *Server) info(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"name": "openwrt-presence-agent", "protocol_version": protocol.Version,
 		"agent_id": s.agentID, "version": s.version,
-		"capabilities": []string{"wifi_snapshot", "wifi_events", "websocket"},
+		"capabilities": []string{
+			"wifi_snapshot", "wifi_events",
+			"wired_snapshot", "wired_events", "websocket",
+		},
 	})
 }
 
