@@ -129,6 +129,7 @@ func (s *Server) diagnostics(w http.ResponseWriter, _ *http.Request) {
 			"provider":             s.config.Provider,
 			"reconcile_interval":   s.config.ReconcileInterval.String(),
 			"discovery_interval":   s.config.DiscoveryInterval.String(),
+			"lan_interface":        s.config.LANInterface,
 			"max_clients":          s.config.MaxClients,
 			"max_http_connections": s.config.MaxHTTPConnections,
 			"provider_queue_size":  s.config.ProviderQueueSize,

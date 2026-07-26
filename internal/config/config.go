@@ -18,6 +18,9 @@ type Config struct {
 	AgentIDFile        string
 	UbusPath           string
 	HostapdSocket      string
+	ArpingPath         string
+	DHCPLeasesFile     string
+	LANInterface       string
 	Provider           string
 	ReconcileInterval  time.Duration
 	DiscoveryInterval  time.Duration
@@ -39,6 +42,9 @@ func Default() Config {
 		AgentIDFile:       "/etc/openwrt-presence-agent/agent-id",
 		UbusPath:          "/bin/ubus",
 		HostapdSocket:     "/var/run/hostapd/global",
+		ArpingPath:        "/usr/sbin/arping",
+		DHCPLeasesFile:    "/tmp/dhcp.leases",
+		LANInterface:      "br-lan",
 		Provider:          "ubus",
 		ReconcileInterval: 30 * time.Second, DiscoveryInterval: 10 * time.Second,
 		CommandTimeout: 5 * time.Second, MaxCommandOutput: 1024 * 1024,
@@ -57,6 +63,9 @@ func Parse(args []string) (Config, error) {
 	fs.StringVar(&c.AgentIDFile, "agent-id-file", c.AgentIDFile, "stable agent identity file")
 	fs.StringVar(&c.UbusPath, "ubus-path", c.UbusPath, "absolute ubus executable path")
 	fs.StringVar(&c.HostapdSocket, "hostapd-socket", c.HostapdSocket, "absolute hostapd global control socket path")
+	fs.StringVar(&c.ArpingPath, "arping-path", c.ArpingPath, "absolute arping executable path")
+	fs.StringVar(&c.DHCPLeasesFile, "dhcp-leases-file", c.DHCPLeasesFile, "absolute dnsmasq leases file path")
+	fs.StringVar(&c.LANInterface, "lan-interface", c.LANInterface, "LAN interface used for Ethernet reachability probes")
 	fs.StringVar(&c.Provider, "provider", c.Provider, "observation provider")
 	fs.DurationVar(&c.ReconcileInterval, "reconcile-interval", c.ReconcileInterval, "snapshot reconciliation interval")
 	fs.DurationVar(&c.DiscoveryInterval, "discovery-interval", c.DiscoveryInterval, "object discovery interval")
@@ -96,6 +105,15 @@ func (c Config) Validate() error {
 	}
 	if c.HostapdSocket == "" || c.HostapdSocket[0] != '/' {
 		return fmt.Errorf("hostapd-socket must be an absolute path")
+	}
+	if c.ArpingPath == "" || c.ArpingPath[0] != '/' {
+		return fmt.Errorf("arping-path must be an absolute path")
+	}
+	if c.DHCPLeasesFile == "" || c.DHCPLeasesFile[0] != '/' {
+		return fmt.Errorf("dhcp-leases-file must be an absolute path")
+	}
+	if c.LANInterface == "" || strings.ContainsAny(c.LANInterface, " \t\r\n/") {
+		return fmt.Errorf("lan-interface must be a valid interface name")
 	}
 	if c.Provider != "ubus" {
 		return fmt.Errorf("unsupported provider %q", c.Provider)

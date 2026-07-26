@@ -12,6 +12,9 @@ script converts each option to an explicit daemon argument.
 | `agent_id_file` | `/etc/openwrt-presence-agent/agent-id` | Absolute stable-ID path. |
 | `ubus_path` | `/bin/ubus` | Absolute path to the local ubus client. |
 | `hostapd_socket` | `/var/run/hostapd/global` | Absolute path to the hostapd global control socket. |
+| `arping_path` | `/usr/sbin/arping` | Absolute path to the packaged active ARP probe. |
+| `dhcp_leases_file` | `/tmp/dhcp.leases` | Absolute dnsmasq lease file used to find wired probe candidates. |
+| `lan_interface` | `br-lan` | Interface on which wired clients are probed. |
 | `provider` | `ubus` | Only implemented provider. |
 | `reconcile_interval` | `30s` | At least one second. |
 | `discovery_interval` | `10s` | At least one second. |
@@ -28,6 +31,14 @@ script converts each option to an explicit daemon argument.
 Invalid values stop startup with a clear error. The listener deliberately does
 not derive or guess a LAN address: ambiguous automatic binding falls back to
 loopback through the packaged default.
+
+Ethernet presence is intentionally stricter than lease or neighbor-table
+presence. Every `reconcile_interval`, the agent sends one ARP request to each
+leased address on `lan_interface`. Only a fresh reply counts as online. An
+unexpired DHCP lease, or a stale kernel neighbor entry, never does. Consequently
+a sleeping, unplugged, or powered-off wired client becomes absent after the
+next reconciliation (30 seconds by default). Static-address clients need a
+dnsmasq lease/reservation so the agent has an address to probe.
 
 ## Token handling
 

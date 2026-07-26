@@ -9,6 +9,7 @@ import (
 	"github.com/theoabw/openwrt-presence-agent/internal/config"
 	"github.com/theoabw/openwrt-presence-agent/internal/observation"
 	"github.com/theoabw/openwrt-presence-agent/internal/providers/ubus"
+	"github.com/theoabw/openwrt-presence-agent/internal/providers/wired"
 )
 
 // Provider publishes normalized observations until its context is canceled.
@@ -20,7 +21,7 @@ type Provider interface {
 func New(c config.Config, sink observation.Sink, logger *slog.Logger) (Provider, error) {
 	switch c.Provider {
 	case "ubus":
-		return ubus.New(ubus.Config{
+		wifi := ubus.New(ubus.Config{
 			UbusPath:          c.UbusPath,
 			HostapdSocket:     c.HostapdSocket,
 			ReconcileInterval: c.ReconcileInterval,
@@ -30,8 +31,32 @@ func New(c config.Config, sink observation.Sink, logger *slog.Logger) (Provider,
 			MaxEventBytes:     c.MaxEventBytes,
 			MaxClients:        c.MaxClients,
 			QueueSize:         c.ProviderQueueSize,
-		}, sink, logger), nil
+		}, sink, logger)
+		ethernet := wired.New(wired.Config{
+			ArpingPath: c.ArpingPath, LeasesFile: c.DHCPLeasesFile,
+			Interface: c.LANInterface, Interval: c.ReconcileInterval,
+			CommandTimeout: c.CommandTimeout, MaxClients: c.MaxClients,
+		}, sink, logger)
+		return group{wifi, ethernet}, nil
 	default:
 		return nil, fmt.Errorf("unsupported provider %q", c.Provider)
 	}
+}
+
+type group []Provider
+
+func (g group) Run(ctx context.Context) error {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	results := make(chan error, len(g))
+	for _, provider := range g {
+		go func(p Provider) { results <- p.Run(ctx) }(provider)
+	}
+	for range g {
+		if err := <-results; err != nil {
+			cancel()
+			return err
+		}
+	}
+	return nil
 }

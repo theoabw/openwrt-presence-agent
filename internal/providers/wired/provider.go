@@ -1,0 +1,145 @@
+// Package wired detects active LAN clients with direct ARP requests.
+package wired
+
+import (
+	"bufio"
+	"context"
+	"fmt"
+	"log/slog"
+	"net"
+	"os"
+	"os/exec"
+	"sort"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/theoabw/openwrt-presence-agent/internal/identity"
+	"github.com/theoabw/openwrt-presence-agent/internal/observation"
+)
+
+const providerID = "wired-arp"
+
+type Config struct {
+	ArpingPath, LeasesFile, Interface string
+	Interval, CommandTimeout          time.Duration
+	MaxClients                        int
+}
+
+type Provider struct {
+	config Config
+	sink   observation.Sink
+	logger *slog.Logger
+}
+
+func New(c Config, sink observation.Sink, logger *slog.Logger) *Provider {
+	return &Provider{config: c, sink: sink, logger: logger}
+}
+
+type lease struct{ mac, ip string }
+
+func parseLeases(file *os.File, limit int) ([]lease, error) {
+	var leases []lease
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		fields := strings.Fields(scanner.Text())
+		if len(fields) < 3 || net.ParseIP(fields[2]) == nil {
+			continue
+		}
+		id, err := identity.ClientID(fields[1])
+		if err != nil {
+			continue
+		}
+		leases = append(leases, lease{mac: id, ip: fields[2]})
+		if len(leases) > limit {
+			return nil, fmt.Errorf("DHCP lease count exceeds client limit")
+		}
+	}
+	return leases, scanner.Err()
+}
+
+func (p *Provider) Run(ctx context.Context) error {
+	p.status("initializing", "", time.Time{})
+	poll := func() {
+		at, err := p.snapshot(ctx)
+		if err != nil {
+			p.status("unavailable", err.Error(), time.Time{})
+			p.logger.Warn("wired presence snapshot failed", "error", err)
+			return
+		}
+		p.status("healthy", "", at)
+	}
+	poll()
+	ticker := time.NewTicker(p.config.Interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			p.status("stopped", "", time.Time{})
+			return nil
+		case <-ticker.C:
+			poll()
+		}
+	}
+}
+
+func (p *Provider) snapshot(parent context.Context) (time.Time, error) {
+	file, err := os.Open(p.config.LeasesFile)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("open DHCP leases: %w", err)
+	}
+	leases, err := parseLeases(file, p.config.MaxClients)
+	_ = file.Close()
+	if err != nil {
+		return time.Time{}, fmt.Errorf("parse DHCP leases: %w", err)
+	}
+
+	active := make(chan string, len(leases))
+	work := make(chan lease)
+	var workers sync.WaitGroup
+	for range min(8, len(leases)) {
+		workers.Add(1)
+		go func() {
+			defer workers.Done()
+			for candidate := range work {
+				if p.reachable(parent, candidate.ip) {
+					active <- candidate.mac
+				}
+			}
+		}()
+	}
+	for _, candidate := range leases {
+		work <- candidate
+	}
+	close(work)
+	workers.Wait()
+	close(active)
+	clients := make([]string, 0, len(active))
+	for id := range active {
+		clients = append(clients, id)
+	}
+	sort.Strings(clients)
+	at := time.Now().UTC()
+	err = p.sink.ApplySnapshot(observation.Snapshot{
+		Provider: providerID, ReceivedAt: at,
+		Stations: map[string][]string{p.config.Interface: clients},
+	})
+	return at, err
+}
+
+func (p *Provider) reachable(parent context.Context, ip string) bool {
+	ctx, cancel := context.WithTimeout(parent, p.config.CommandTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, p.config.ArpingPath, "-c", "1", "-w", "1", "-I", p.config.Interface, ip)
+	cmd.Env = []string{"PATH=/usr/sbin:/usr/bin:/sbin:/bin", "LANG=C", "LC_ALL=C"}
+	return cmd.Run() == nil
+}
+
+func (p *Provider) status(status, lastError string, snapshot time.Time) {
+	p.sink.SetProviderStatus(observation.ProviderStatus{
+		ID: providerID, Kind: "ethernet", Status: status,
+		SnapshotSupported: true, Sources: []string{p.config.Interface},
+		LastSnapshotAt: snapshot, LastError: lastError,
+		SnapshotSource: "active-arp:dhcp-leases",
+	})
+}
