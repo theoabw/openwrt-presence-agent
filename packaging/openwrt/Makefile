@@ -60,7 +60,7 @@ define Package/openwrt-presence-agent/postinst
 umask 077
 mkdir -p /etc/openwrt-presence-agent
 if [ ! -s /etc/openwrt-presence-agent/token ]; then
-	head -c 32 /dev/urandom | base64 > /etc/openwrt-presence-agent/token
+	tr -dc 'A-Za-z0-9' < /dev/urandom | head -c 48 > /etc/openwrt-presence-agent/token
 fi
 chmod 600 /etc/openwrt-presence-agent/token
 exit 0

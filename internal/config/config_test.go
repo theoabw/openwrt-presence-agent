@@ -88,3 +88,24 @@ func TestLoadTokenRejectsUnsafePermissions(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestPackagedTokenGenerationNeedsOnlyBusyBoxDefaults(t *testing.T) {
+	const generator = "tr -dc 'A-Za-z0-9' < /dev/urandom | head -c 48"
+	for _, path := range []string{
+		"../../packaging/openwrt/Makefile",
+		"../../packaging/openwrt/files/openwrt-presence-agent.init",
+		"../../scripts/build-ipk.sh",
+	} {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		text := string(data)
+		if !strings.Contains(text, generator) {
+			t.Errorf("%s does not use the BusyBox-only token generator", path)
+		}
+		if strings.Contains(text, "/dev/urandom | base64") {
+			t.Errorf("%s still requires the optional base64 applet", path)
+		}
+	}
+}
