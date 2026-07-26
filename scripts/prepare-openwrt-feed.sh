@@ -2,20 +2,27 @@
 set -eu
 
 usage() {
-	echo "usage: prepare-openwrt-feed.sh OUTPUT_DIR [GIT_REF]" >&2
+	echo "usage: prepare-openwrt-feed.sh OUTPUT_DIR VERSION [GIT_REF]" >&2
 	exit 2
 }
 
-if [ "$#" -lt 1 ] || [ "$#" -gt 2 ]; then
+if [ "$#" -lt 2 ] || [ "$#" -gt 3 ]; then
 	usage
 fi
 
 repo_dir="$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)"
 output_dir="$1"
-git_ref="${2:-HEAD}"
-version="$(sed -n 's/^PKG_VERSION:=//p' "$repo_dir/packaging/openwrt/Makefile")"
+version="$2"
+git_ref="${3:-HEAD}"
 package_dir="$output_dir/openwrt-presence-agent"
 archive_name="openwrt-presence-agent-${version}.tar.gz"
+
+case "$version" in
+'' | *[!0-9A-Za-z.+~-]*)
+	echo "invalid package version: $version" >&2
+	exit 2
+	;;
+esac
 
 case "$output_dir" in
 '' | /)
@@ -38,6 +45,7 @@ archive_hash="$(sha256sum "$package_dir/$archive_name" | awk '{print $1}')"
 # The generated Makefile must contain the literal OpenWrt make variable.
 # shellcheck disable=SC2016
 sed -i \
+	-e "s|^PKG_VERSION:=.*|PKG_VERSION:=$version|" \
 	-e 's|^PKG_SOURCE_URL:=.*|PKG_SOURCE_URL:=file://$(CURDIR)|' \
 	-e "s|^PKG_HASH:=.*|PKG_HASH:=$archive_hash|" \
 	"$package_dir/Makefile"

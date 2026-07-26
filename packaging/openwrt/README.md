@@ -10,11 +10,14 @@ For a local package build, prepare an immutable one-package feed from the
 current Git commit:
 
 ```sh
-scripts/prepare-openwrt-feed.sh .openwrt-feed
+scripts/prepare-openwrt-feed.sh .openwrt-feed 0.0.0
 ```
 
 The generated recipe contains the archive's SHA-256 hash rather than
-`PKG_HASH:=skip`. Add `.openwrt-feed` as a local SDK feed, install it, and run:
+`PKG_HASH:=skip` and replaces the template version with the version argument.
+Use `0.0.0` for local and pull-request builds; signed release tags supply the
+real release version. Add `.openwrt-feed` as a local SDK feed, install it, and
+run:
 
 ```sh
 make package/openwrt-presence-agent/compile V=s

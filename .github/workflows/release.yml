@@ -42,12 +42,9 @@ jobs:
           git merge-base --is-ancestor "$GITHUB_SHA" origin/main
 
       - name: Verify release version
-        id: version
         run: |
           version="${GITHUB_REF_NAME#v}"
-          recipe_version="$(sed -n 's/^PKG_VERSION:=//p' packaging/openwrt/Makefile)"
-          test "$version" = "$recipe_version"
-          printf 'version=%s\n' "$version" >> "$GITHUB_OUTPUT"
+          printf '%s\n' "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'
 
       - name: Check
         run: scripts/check.sh
@@ -113,7 +110,11 @@ jobs:
         with:
           fetch-depth: 0
       - name: Prepare immutable package feed
-        run: scripts/prepare-openwrt-feed.sh .openwrt-feed
+        run: |
+          scripts/prepare-openwrt-feed.sh \
+            .openwrt-feed \
+            "${GITHUB_REF_NAME#v}" \
+            "$GITHUB_SHA"
       - name: Build with official OpenWrt SDK
         uses: openwrt/gh-action-sdk@797d0e3d0eb13b355c3447f60d0179d4b43089e2
         env:
