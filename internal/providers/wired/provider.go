@@ -18,7 +18,10 @@ import (
 	"github.com/theoabw/openwrt-presence-agent/internal/observation"
 )
 
-const providerID = "wired-arp"
+const (
+	providerID          = "wired-arp"
+	maxProbeConcurrency = 32
+)
 
 type Config struct {
 	ArpingPath, LeasesFile, Interface string
@@ -94,16 +97,22 @@ func (p *Provider) snapshot(parent context.Context) (time.Time, error) {
 		return time.Time{}, fmt.Errorf("parse DHCP leases: %w", err)
 	}
 
-	active := make(chan string, len(leases))
+	type result struct {
+		id        string
+		reachable bool
+		at        time.Time
+	}
+	results := make(chan result, len(leases))
 	work := make(chan lease)
 	var workers sync.WaitGroup
-	for range min(8, len(leases)) {
+	for range min(maxProbeConcurrency, len(leases)) {
 		workers.Add(1)
 		go func() {
 			defer workers.Done()
 			for candidate := range work {
-				if p.reachable(parent, candidate.ip) {
-					active <- candidate.mac
+				reachable := p.reachable(parent, candidate.ip)
+				results <- result{
+					id: candidate.mac, reachable: reachable, at: time.Now().UTC(),
 				}
 			}
 		}()
@@ -112,11 +121,24 @@ func (p *Provider) snapshot(parent context.Context) (time.Time, error) {
 		work <- candidate
 	}
 	close(work)
-	workers.Wait()
-	close(active)
-	clients := make([]string, 0, len(active))
-	for id := range active {
-		clients = append(clients, id)
+	go func() {
+		workers.Wait()
+		close(results)
+	}()
+
+	clients := make([]string, 0, len(leases))
+	for result := range results {
+		if !result.reachable {
+			continue
+		}
+		clients = append(clients, result.id)
+		if err := p.sink.Apply(observation.Observation{
+			Provider: providerID, SourceInstance: p.config.Interface,
+			ReceivedAt: result.at, ClientID: result.id,
+			Kind: observation.WiredReachable, Confidence: observation.Authoritative,
+		}); err != nil {
+			return time.Time{}, fmt.Errorf("publish reachable client: %w", err)
+		}
 	}
 	sort.Strings(clients)
 	at := time.Now().UTC()
@@ -141,5 +163,6 @@ func (p *Provider) status(status, lastError string, snapshot time.Time) {
 		SnapshotSupported: true, Sources: []string{p.config.Interface},
 		LastSnapshotAt: snapshot, LastError: lastError,
 		SnapshotSource: "active-arp:dhcp-leases",
+		EventSource:    "active-arp:reply",
 	})
 }
