@@ -64,6 +64,8 @@ func parseLeases(file *os.File, limit int) ([]lease, error) {
 
 func (p *Provider) Run(ctx context.Context) error {
 	p.status("initializing", "", time.Time{})
+	neighborEvents := make(chan neighborEvent, p.config.MaxClients)
+	go p.runNeighborEvents(ctx, neighborEvents)
 	poll := func() {
 		at, err := p.snapshot(ctx)
 		if err != nil {
@@ -81,6 +83,13 @@ func (p *Provider) Run(ctx context.Context) error {
 		case <-ctx.Done():
 			p.status("stopped", "", time.Time{})
 			return nil
+		case event := <-neighborEvents:
+			if p.config.Excluded != nil && p.config.Excluded(event.clientID) {
+				continue
+			}
+			if err := p.publishReachable(event.clientID, event.at); err != nil {
+				p.logger.Warn("discarding wired neighbor event", "error", err)
+			}
 		case <-ticker.C:
 			poll()
 		}
@@ -143,11 +152,7 @@ func (p *Provider) snapshot(parent context.Context) (time.Time, error) {
 			continue
 		}
 		clients = append(clients, result.id)
-		if err := p.sink.Apply(observation.Observation{
-			Provider: providerID, SourceInstance: p.config.Interface,
-			ReceivedAt: result.at, ClientID: result.id,
-			Kind: observation.WiredReachable, Confidence: observation.Authoritative,
-		}); err != nil {
+		if err := p.publishReachable(result.id, result.at); err != nil {
 			return time.Time{}, fmt.Errorf("publish reachable client: %w", err)
 		}
 	}
@@ -158,6 +163,31 @@ func (p *Provider) snapshot(parent context.Context) (time.Time, error) {
 		Stations: map[string][]string{p.config.Interface: clients},
 	})
 	return at, err
+}
+
+func (p *Provider) publishReachable(clientID string, at time.Time) error {
+	return p.sink.Apply(observation.Observation{
+		Provider: providerID, SourceInstance: p.config.Interface,
+		ReceivedAt: at, ClientID: clientID,
+		Kind: observation.WiredReachable, Confidence: observation.Authoritative,
+	})
+}
+
+func (p *Provider) runNeighborEvents(ctx context.Context, events chan<- neighborEvent) {
+	for ctx.Err() == nil {
+		err := listenNeighborEvents(ctx, p.config.Interface, events)
+		if ctx.Err() != nil {
+			return
+		}
+		p.logger.Warn("wired neighbor event listener stopped; retrying", "error", err)
+		timer := time.NewTimer(5 * time.Second)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return
+		case <-timer.C:
+		}
+	}
 }
 
 func (p *Provider) reachable(parent context.Context, ip string) bool {
@@ -174,6 +204,6 @@ func (p *Provider) status(status, lastError string, snapshot time.Time) {
 		SnapshotSupported: true, Sources: []string{p.config.Interface},
 		LastSnapshotAt: snapshot, LastError: lastError,
 		SnapshotSource: "active-arp:dhcp-leases",
-		EventSource:    "active-arp:reply",
+		EventSource:    "netlink:reachable,active-arp:reply",
 	})
 }
