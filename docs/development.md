@@ -34,9 +34,15 @@ To build a native package, use an official OpenWrt SDK with the matching target.
 Create the hashed local feed, add it to the SDK, and inspect the result:
 
 ```sh
-scripts/prepare-openwrt-feed.sh .openwrt-feed
+scripts/prepare-openwrt-feed.sh .openwrt-feed 0.0.0
 scripts/check-package.sh bin/packages/ARCH/base/openwrt-presence-agent_*.ipk
 ```
+
+The checked-in OpenWrt recipe is a build template and deliberately keeps
+`PKG_VERSION:=0.0.0`. Pull-request SDK builds use that development version.
+Release builds take the real version from the signed `vMAJOR.MINOR.PATCH` tag
+and inject it into the generated feed recipe and package artifacts. Contributors
+therefore do not choose or commit release versions.
 
 The `OpenWrt SDK` workflow performs this build against OpenWrt 25.12 and 24.10
 for the common architecture matrix documented in
@@ -91,8 +97,8 @@ binary release:
 
 - record the exact router firmware, OpenWrt target, package architecture, and
   SDK used for every package;
-- pin `PKG_VERSION` and ensure the release matrix contains only architectures
-  supported by evidence;
+- ensure the signed tag contains the intended release version and the release
+  matrix contains only architectures supported by evidence;
 - run `scripts/check-package.sh` on each resulting `.ipk`;
 - complete the hardware acceptance checklist in `compatibility.md`;
 - enable and test GitHub private vulnerability reporting;

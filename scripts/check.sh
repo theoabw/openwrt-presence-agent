@@ -42,11 +42,16 @@ jq empty api/protocol.schema.json api/fixtures/v1.json
 ruby -e 'require "yaml"; YAML.load_file("api/openapi.yaml")'
 
 package_dir="$(mktemp -d)"
-trap 'rm -rf "$package_dir"' EXIT
-version="$(sed -n 's/^PKG_VERSION:=//p' packaging/openwrt/Makefile)"
+feed_dir="$(mktemp -d)"
+trap 'rm -rf "$package_dir" "$feed_dir"' EXIT
 scripts/build-ipk.sh \
-	"$version" \
+	"0.0.0" \
 	aarch64_cortex-a53_neon-vfpv4 \
 	arm64 \
 	"$package_dir"
 scripts/check-package.sh "$package_dir"/*.ipk
+
+scripts/prepare-openwrt-feed.sh "$feed_dir" 9.8.7
+test -f "$feed_dir/openwrt-presence-agent/openwrt-presence-agent-9.8.7.tar.gz"
+grep -qx 'PKG_VERSION:=9.8.7' \
+	"$feed_dir/openwrt-presence-agent/Makefile"

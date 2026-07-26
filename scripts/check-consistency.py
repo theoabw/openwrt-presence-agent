@@ -18,9 +18,9 @@ def match(path: str, pattern: str) -> str:
     return found.group(1)
 
 
-package_version = match("packaging/openwrt/Makefile", r"^PKG_VERSION:=(\S+)$")
-if re.fullmatch(r"\d+\.\d+\.\d+", package_version) is None:
-    raise SystemExit(f"invalid package version: {package_version}")
+template_version = match("packaging/openwrt/Makefile", r"^PKG_VERSION:=(\S+)$")
+if template_version != "0.0.0":
+    raise SystemExit("OpenWrt recipe must keep the 0.0.0 build-template version")
 
 protocol_version = match("pkg/protocol/types.go", r'^const Version = "(v\d+)"$')
 schema = json.loads((ROOT / "api/protocol.schema.json").read_text())
@@ -39,6 +39,6 @@ if f"version: {protocol_version.removeprefix('v')}.0.0" not in openapi:
     raise SystemExit("OpenAPI document version does not match the protocol version")
 
 print(
-    f"consistent package_version={package_version} "
+    f"consistent template_version={template_version} "
     f"protocol_version={protocol_version}"
 )
