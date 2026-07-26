@@ -14,6 +14,11 @@ func TestWiFiAssociationsTrackRoamingAndSnapshots(t *testing.T) {
 		t.Fatal(err)
 	}
 	associations := newWiFiAssociations(state)
+	select {
+	case <-associations.Ready():
+		t.Fatal("association inventory was ready before its first snapshot")
+	default:
+	}
 	clientID := "mac:00:11:22:33:44:55"
 	at := time.Now().UTC()
 	if err := associations.ApplySnapshot(observation.Snapshot{
@@ -27,6 +32,11 @@ func TestWiFiAssociationsTrackRoamingAndSnapshots(t *testing.T) {
 	}
 	if !associations.Contains(clientID) {
 		t.Fatal("snapshot client is not excluded from wired probes")
+	}
+	select {
+	case <-associations.Ready():
+	default:
+		t.Fatal("association inventory was not ready after its first snapshot")
 	}
 	if err := associations.ApplySourceSnapshot(observation.SourceSnapshot{
 		Provider: "ubus-hostapd", SourceInstance: "hostapd.wlan0",
@@ -45,5 +55,21 @@ func TestWiFiAssociationsTrackRoamingAndSnapshots(t *testing.T) {
 	}
 	if associations.Contains(clientID) {
 		t.Fatal("client remained excluded after its final Wi-Fi connection disappeared")
+	}
+}
+
+func TestWiFiAssociationsBecomeReadyWhenProviderIsUnavailable(t *testing.T) {
+	state, err := engine.New(engine.Limits{MaxClients: 10, MaxSubscribers: 1, QueueSize: 4})
+	if err != nil {
+		t.Fatal(err)
+	}
+	associations := newWiFiAssociations(state)
+	associations.SetProviderStatus(observation.ProviderStatus{
+		ID: "ubus-hostapd", Status: "unavailable",
+	})
+	select {
+	case <-associations.Ready():
+	default:
+		t.Fatal("unavailable Wi-Fi provider left Ethernet gated")
 	}
 }

@@ -13,12 +13,23 @@ type wifiAssociations struct {
 	sink        observation.Sink
 	mu          sync.RWMutex
 	connections map[string]map[string]struct{}
+	ready       chan struct{}
+	readyOnce   sync.Once
 }
 
 func newWiFiAssociations(sink observation.Sink) *wifiAssociations {
 	return &wifiAssociations{
 		sink: sink, connections: make(map[string]map[string]struct{}),
+		ready: make(chan struct{}),
 	}
+}
+
+func (w *wifiAssociations) Ready() <-chan struct{} {
+	return w.ready
+}
+
+func (w *wifiAssociations) markReady() {
+	w.readyOnce.Do(func() { close(w.ready) })
 }
 
 func (w *wifiAssociations) Contains(clientID string) bool {
@@ -64,6 +75,7 @@ func (w *wifiAssociations) ApplySnapshot(value observation.Snapshot) error {
 	w.mu.Lock()
 	w.connections = connections
 	w.mu.Unlock()
+	w.markReady()
 	return nil
 }
 
@@ -90,4 +102,8 @@ func (w *wifiAssociations) ApplySourceSnapshot(value observation.SourceSnapshot)
 
 func (w *wifiAssociations) SetProviderStatus(value observation.ProviderStatus) {
 	w.sink.SetProviderStatus(value)
+	if value.Status == "unavailable" {
+		// Do not block Ethernet indefinitely on routers without usable radios.
+		w.markReady()
+	}
 }
