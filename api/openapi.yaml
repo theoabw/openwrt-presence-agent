@@ -40,10 +40,11 @@ paths:
       operationId: listClients
       responses:
         "200":
-          description: Internally consistent current state; check health for provider readiness.
+          description: Internally consistent current state after the initial authoritative Wi-Fi snapshot.
           content:
             application/json:
               schema: { $ref: "./protocol.schema.json#/$defs/snapshot" }
+        "503": { description: Initial authoritative Wi-Fi snapshot is not available yet. }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "429": { $ref: "#/components/responses/TooManyRequests" }
   /v1/clients/{client_id}:
@@ -62,6 +63,7 @@ paths:
               schema: { $ref: "./protocol.schema.json#/$defs/client" }
         "404": { description: Client not found. }
         "400": { description: Invalid client ID. }
+        "503": { description: Initial authoritative Wi-Fi snapshot is not available yet. }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "429": { $ref: "#/components/responses/TooManyRequests" }
   /v1/providers:
@@ -100,14 +102,14 @@ paths:
       description: |
         Upgrade to WebSocket. The server sends stream.hello, a current
         internally consistent state.snapshot, then strictly ordered
-        state-changing events. Check health for provider readiness. Replay is
-        not supported.
+        state-changing events. The upgrade is rejected until the initial
+        authoritative Wi-Fi snapshot is available. Replay is not supported.
       responses:
         "101": { description: WebSocket event stream. }
         "400": { description: Invalid or unsupported WebSocket upgrade. }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "429": { $ref: "#/components/responses/TooManyRequests" }
-        "503": { description: Stream client limit reached. }
+        "503": { description: Initial state is not ready or the stream client limit was reached. }
 components:
   securitySchemes:
     bearerAuth:

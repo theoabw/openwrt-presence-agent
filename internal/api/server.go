@@ -86,6 +86,10 @@ func (s *Server) info(w http.ResponseWriter, _ *http.Request) {
 func (s *Server) health(w http.ResponseWriter, _ *http.Request) {
 	status := "not_ready"
 	code := http.StatusServiceUnavailable
+	if !s.engine.HasAuthoritativeSnapshot("wifi") {
+		writeJSON(w, code, map[string]any{"status": status, "providers": s.engine.Providers()})
+		return
+	}
 	for _, provider := range s.engine.Providers() {
 		if provider.Status == "healthy" {
 			status = "operational"
@@ -101,10 +105,16 @@ func (s *Server) health(w http.ResponseWriter, _ *http.Request) {
 }
 
 func (s *Server) clients(w http.ResponseWriter, _ *http.Request) {
+	if !s.requireReady(w) {
+		return
+	}
 	writeJSON(w, http.StatusOK, s.engine.Snapshot())
 }
 
 func (s *Server) client(w http.ResponseWriter, r *http.Request) {
+	if !s.requireReady(w) {
+		return
+	}
 	id, err := url.PathUnescape(r.PathValue("id"))
 	if err != nil || len(id) > 128 || !strings.HasPrefix(id, "mac:") {
 		http.Error(w, "invalid client id", http.StatusBadRequest)
@@ -116,6 +126,14 @@ func (s *Server) client(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, value)
+}
+
+func (s *Server) requireReady(w http.ResponseWriter) bool {
+	if s.engine.HasAuthoritativeSnapshot("wifi") {
+		return true
+	}
+	http.Error(w, "observer is not ready", http.StatusServiceUnavailable)
+	return false
 }
 
 func (s *Server) providers(w http.ResponseWriter, _ *http.Request) {
@@ -194,6 +212,9 @@ func (c *limitedConn) Close() error {
 }
 
 func (s *Server) events(w http.ResponseWriter, r *http.Request) {
+	if !s.requireReady(w) {
+		return
+	}
 	snapshot, events, cancel, err := s.engine.Subscribe()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusServiceUnavailable)

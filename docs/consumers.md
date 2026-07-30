@@ -18,8 +18,9 @@ send webhooks, write databases, publish MQTT, or make outbound connections.
 ## Recommended integration pattern
 
 1. Call `GET /v1/info` and verify the protocol version and stable agent ID.
-2. Check `GET /v1/health` before treating client state as authoritative.
-3. Connect to `/v1/events` with the bearer token.
+2. Check `GET /v1/health`; retry while it returns HTTP 503.
+3. Connect to `/v1/events` with the bearer token; the upgrade is also rejected
+   with HTTP 503 until authoritative Wi-Fi state is ready.
 4. Accept `stream.hello` followed by the complete `state.snapshot`.
 5. Apply subsequent events only while their epoch and sequence remain
    continuous.

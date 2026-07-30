@@ -6,9 +6,8 @@ timestamps.
 
 `GET /v1/clients` returns the current internally consistent engine snapshot
 with a random runtime `stream_epoch` and monotonically increasing `sequence`.
-Before the first successful provider snapshot, this response can be empty and
-is not evidence that no clients are connected. Check `GET /v1/health` and
-provider status before treating client state as provider-authoritative. Each
+Before the first successful authoritative Wi-Fi snapshot, state endpoints
+return HTTP 503 rather than exposing an empty snapshot as authoritative. Each
 client has provider-independent connections and a derived state:
 
 - `present` / `present: true`: at least one current Wi-Fi connection or freshly
@@ -21,9 +20,9 @@ client has provider-independent connections and a derived state:
 A disassociation is source-scoped. During a local roam, removing the old
 connection does not make the client absent if another BSS connection is already
 known. If it removes the last known connection, state becomes `unknown` while
-the provider immediately takes an all-BSS snapshot. That snapshot confirms
-absence or discovers the new connection. This is correctness recovery rather
-than a time-based presence debounce.
+the provider immediately verifies that BSS with a source-scoped snapshot. Both
+association and disassociation events are verified before publication. This is
+correctness recovery rather than a time-based presence debounce.
 
 `GET /v1/health` returns:
 
@@ -40,6 +39,9 @@ Upgrade `GET /v1/events` using RFC 6455. The server sends:
    atomically with subscription registration;
 3. state events in strictly increasing sequence order;
 4. `stream.heartbeat` every 30 seconds without advancing sequence.
+
+The server rejects the upgrade with HTTP 503 until the initial authoritative
+Wi-Fi snapshot is available.
 
 Clients may remain receive-only and are not required to send application
 messages or WebSocket ping frames. The server detects failed and slow

@@ -54,14 +54,14 @@ func TestHealthReadinessAndDegradation(t *testing.T) {
 		t.Fatalf("initial status = %d", got)
 	}
 	state.SetProvider(protocol.Provider{
-		ID: "ubus-hostapd", Status: "healthy", SnapshotSupported: true,
+		ID: "ubus-hostapd", Kind: "wifi", Status: "healthy", SnapshotSupported: true,
 		LastSnapshotAt: time.Now().UTC(),
 	})
 	if got := request(t, server.http.Handler, "/v1/health", testToken).Code; got != http.StatusOK {
 		t.Fatalf("healthy status = %d", got)
 	}
 	state.SetProvider(protocol.Provider{
-		ID: "ubus-hostapd", Status: "unavailable", SnapshotSupported: true,
+		ID: "ubus-hostapd", Kind: "wifi", Status: "unavailable", SnapshotSupported: true,
 		LastSnapshotAt: time.Now().UTC(),
 	})
 	response := request(t, server.http.Handler, "/v1/health", testToken)
@@ -74,6 +74,15 @@ func TestHealthReadinessAndDegradation(t *testing.T) {
 	}
 	if body["status"] != "degraded" {
 		t.Fatalf("health body = %#v", body)
+	}
+}
+
+func TestStateEndpointsRequireAuthoritativeWiFiSnapshot(t *testing.T) {
+	server, _ := testServer(t)
+	for _, path := range []string{"/v1/clients", "/v1/clients/mac:00:11:22:33:44:55", "/v1/events"} {
+		if got := request(t, server.http.Handler, path, testToken).Code; got != http.StatusServiceUnavailable {
+			t.Fatalf("%s status = %d", path, got)
+		}
 	}
 }
 

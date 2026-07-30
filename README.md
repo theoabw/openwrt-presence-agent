@@ -128,7 +128,7 @@ events are silent or missed.
 - dynamic discovery of all `hostapd.*` ubus objects;
 - bounded, fixed-command `/bin/ubus` discovery and snapshots;
 - bounded hostapd global-control event input;
-- immediate association/disassociation delivery;
+- low-latency, source-verified association/disassociation delivery;
 - event-assisted wired reachability with bounded concurrent ARP confirmation;
 - startup ordering and MAC filtering that keep Wi-Fi clients off the wired path;
 - periodic and recovery-triggered authoritative reconciliation;
@@ -206,10 +206,10 @@ GET /v1/events
 ```
 
 `/v1/events` is a WebSocket upgrade. A connection receives `stream.hello`, a
-current internally consistent `state.snapshot`, then ordered events. Check
-`/v1/health` before treating the snapshot as provider-authoritative. There is no
-replay; after a disconnect, epoch change, or sequence gap, reconnect and accept
-the next snapshot.
+current internally consistent `state.snapshot`, then ordered events. State
+endpoints return HTTP 503 until the first authoritative Wi-Fi snapshot is
+available. There is no replay; after a disconnect, epoch change, or sequence
+gap, reconnect and accept the next snapshot.
 
 See the [API guide](docs/api.md) and [machine-readable contracts](api/).
 Developers building another adapter should also read the

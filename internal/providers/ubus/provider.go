@@ -16,9 +16,11 @@ import (
 )
 
 const (
-	providerID          = "ubus-hostapd"
-	maxSourceInstances  = 128
-	snapshotConcurrency = 2
+	providerID                  = "ubus-hostapd"
+	maxSourceInstances          = 128
+	snapshotConcurrency         = 2
+	connectVerificationAttempts = 3
+	connectVerificationDelay    = 100 * time.Millisecond
 )
 
 // Config contains only the settings needed by the ubus/hostapd provider.
@@ -160,9 +162,10 @@ func (p *Provider) Run(ctx context.Context) error {
 				continue
 			}
 			p.noteEvent(event.value.ReceivedAt)
-			if event.value.Kind == observation.WiFiDisassociated {
-				if err := p.sourceSnapshot(ctx, event.value.SourceInstance); err != nil {
-					p.fail("post-disassociation source snapshot failed: " + sanitizeError(err))
+			switch event.value.Kind {
+			case observation.WiFiAssociated, observation.WiFiDisassociated:
+				if err := p.verifyEvent(ctx, event.value); err != nil {
+					p.fail("post-event source snapshot failed: " + sanitizeError(err))
 					if subCancel != nil {
 						subCancel()
 					}
@@ -258,15 +261,40 @@ func (p *Provider) snapshot(parent context.Context, objects []string) error {
 	return nil
 }
 
-func (p *Provider) sourceSnapshot(parent context.Context, object string) error {
-	ids, err := p.snapshotSource(parent, object)
-	if err != nil {
-		return err
+func (p *Provider) verifyEvent(parent context.Context, event observation.Observation) error {
+	attempts := 1
+	if event.Kind == observation.WiFiAssociated {
+		attempts = connectVerificationAttempts
 	}
-	return p.sink.ApplySourceSnapshot(observation.SourceSnapshot{
-		Provider: providerID, SourceInstance: object,
-		ReceivedAt: time.Now().UTC(), Clients: ids,
-	})
+	for attempt := range attempts {
+		ids, err := p.snapshotSource(parent, event.SourceInstance)
+		if err != nil {
+			return err
+		}
+		verified := event.Kind != observation.WiFiAssociated ||
+			containsSorted(ids, event.ClientID)
+		if verified || attempt == attempts-1 {
+			return p.sink.ApplySourceSnapshot(observation.SourceSnapshot{
+				Provider: providerID, SourceInstance: event.SourceInstance,
+				ReceivedAt: time.Now().UTC(), Clients: ids,
+			})
+		}
+		timer := time.NewTimer(connectVerificationDelay)
+		select {
+		case <-parent.Done():
+			if !timer.Stop() {
+				<-timer.C
+			}
+			return parent.Err()
+		case <-timer.C:
+		}
+	}
+	return nil
+}
+
+func containsSorted(values []string, wanted string) bool {
+	index := sort.SearchStrings(values, wanted)
+	return index < len(values) && values[index] == wanted
 }
 
 func (p *Provider) snapshotSource(parent context.Context, object string) ([]string, error) {

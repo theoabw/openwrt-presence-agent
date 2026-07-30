@@ -11,7 +11,7 @@ case "$1" in
 				printf '%s\n' '{"freq":2412,"clients":{"02:00:00:00:00:01":{"assoc":true,"authorized":true,"signal":-40}}}'
 				;;
 			hostapd.wlan1)
-				printf '%s\n' '{"freq":5180,"clients":{}}'
+				printf '%s\n' '{"freq":5180,"clients":{"02:00:00:00:00:02":{"assoc":true,"authorized":true,"signal":-45}}}'
 				;;
 			*)
 				exit 1

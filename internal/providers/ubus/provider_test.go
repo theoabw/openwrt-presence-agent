@@ -2,8 +2,10 @@ package ubus
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"log/slog"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -72,6 +74,56 @@ func TestDecodeSnapshotRequiresClientsMap(t *testing.T) {
 	}
 }
 
+func TestConnectVerificationRetriesUntilAuthorized(t *testing.T) {
+	dir := t.TempDir()
+	counter := filepath.Join(dir, "count")
+	executable := filepath.Join(dir, "ubus")
+	script := fmt.Sprintf(`#!/bin/sh
+count=0
+[ ! -f %q ] || count=$(cat %q)
+count=$((count + 1))
+printf '%%s' "$count" > %q
+if [ "$count" -lt 3 ]; then
+	printf '%%s\n' '{"clients":{"02:00:00:00:00:09":{"assoc":true,"authorized":false}}}'
+else
+	printf '%%s\n' '{"clients":{"02:00:00:00:00:09":{"assoc":true,"authorized":true}}}'
+fi
+`, counter, counter, counter)
+	if err := os.WriteFile(executable, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	state, err := engine.New(engine.Limits{
+		MaxClients: 10, MaxSubscribers: 1, QueueSize: 8,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider := New(
+		testConfig(executable),
+		state,
+		slog.New(slog.NewTextHandler(io.Discard, nil)),
+	)
+	clientID := "mac:02:00:00:00:00:09"
+	if err := provider.verifyEvent(context.Background(), observation.Observation{
+		Provider: providerID, SourceInstance: "hostapd.wlan0",
+		ReceivedAt: time.Now().UTC(), ClientID: clientID,
+		Kind: observation.WiFiAssociated, Confidence: observation.Authoritative,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	client, ok := state.Client(clientID)
+	if !ok || client.State != protocol.StatePresent {
+		t.Fatalf("verified client = %#v, found=%v", client, ok)
+	}
+	data, err := os.ReadFile(counter)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != "3" {
+		t.Fatalf("verification attempts = %s", data)
+	}
+}
+
 func TestProviderSnapshotAndImmediateEvent(t *testing.T) {
 	executable, err := filepath.Abs("../../../testdata/fake-ubus.sh")
 	if err != nil {
@@ -122,7 +174,7 @@ func TestProviderSnapshotAndImmediateEvent(t *testing.T) {
 	}
 }
 
-func TestEventReceivedDuringSnapshotIsAppliedAfterSnapshot(t *testing.T) {
+func TestConnectReceivedDuringSnapshotIsVerifiedAfterSnapshot(t *testing.T) {
 	executable, err := filepath.Abs("../../../testdata/fake-ubus-race.sh")
 	if err != nil {
 		t.Fatal(err)
@@ -144,14 +196,18 @@ func TestEventReceivedDuringSnapshotIsAppliedAfterSnapshot(t *testing.T) {
 	}()
 	deadline := time.Now().Add(750 * time.Millisecond)
 	for {
-		client, ok := state.Client("mac:02:00:00:00:00:03")
-		if ok && client.State == protocol.StatePresent {
+		status, ok := state.Provider(providerID)
+		if ok && !status.LastEventAt.IsZero() && !status.LastSnapshotAt.IsZero() {
 			break
 		}
 		if time.Now().After(deadline) {
-			t.Fatalf("event was lost across snapshot: %#v", state.Snapshot())
+			t.Fatalf("event was not verified after snapshot: %#v", status)
 		}
 		time.Sleep(10 * time.Millisecond)
+	}
+	if client, ok := state.Client("mac:02:00:00:00:00:03"); ok &&
+		client.State == protocol.StatePresent {
+		t.Fatalf("stale queued connect event restored presence: %#v", client)
 	}
 	cancel()
 	select {
