@@ -29,12 +29,13 @@ define Package/openwrt-presence-agent
   CATEGORY:=Network
   TITLE:=Event-driven OpenWrt client observation service
   URL:=https://github.com/theoabw/openwrt-presence-agent
-  DEPENDS:=$(GO_ARCH_DEPENDS) +arping
+  DEPENDS:=$(GO_ARCH_DEPENDS) +ubus +iputils-arping
 endef
 
 define Package/openwrt-presence-agent/description
  Publishes authenticated, normalized Wi-Fi and Ethernet client snapshots and
- low-latency connection events for trusted local consumers.
+ low-latency connection events for trusted local consumers. DHCP leases supply
+ candidate wired addresses; only fresh ARP replies confirm wired presence.
 endef
 
 define Package/openwrt-presence-agent/conffiles

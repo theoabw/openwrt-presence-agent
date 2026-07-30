@@ -12,7 +12,7 @@ script converts each option to an explicit daemon argument.
 | `agent_id_file` | `/etc/openwrt-presence-agent/agent-id` | Absolute stable-ID path. |
 | `ubus_path` | `/bin/ubus` | Absolute path to the local ubus client. |
 | `hostapd_socket` | `/var/run/hostapd/global` | Absolute path to the hostapd global control socket. |
-| `arping_path` | `/usr/sbin/arping` | Absolute path to the packaged active ARP probe. |
+| `arping_path` | `/usr/bin/arping` | Absolute path to the packaged active ARP probe. |
 | `dhcp_leases_file` | `/tmp/dhcp.leases` | Absolute dnsmasq lease file used to find wired probe candidates. |
 | `lan_interface` | `br-lan` | Interface on which wired clients are probed. |
 | `provider` | `ubus` | Only implemented provider. |
