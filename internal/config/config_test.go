@@ -109,3 +109,20 @@ func TestPackagedTokenGenerationNeedsOnlyBusyBoxDefaults(t *testing.T) {
 		}
 	}
 }
+
+func TestPackagedArpingDependencyAndPath(t *testing.T) {
+	makefile, err := os.ReadFile("../../packaging/openwrt/Makefile")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(makefile), "+iputils-arping") {
+		t.Error("OpenWrt package does not depend on iputils-arping")
+	}
+	if strings.Contains(string(makefile), " +arping") {
+		t.Error("OpenWrt package still depends on the nonexistent arping package")
+	}
+
+	if got := Default().ArpingPath; got != "/usr/bin/arping" {
+		t.Errorf("default arping path = %q", got)
+	}
+}

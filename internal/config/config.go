@@ -43,7 +43,7 @@ func Default() Config {
 		AgentIDFile:       "/etc/openwrt-presence-agent/agent-id",
 		UbusPath:          "/bin/ubus",
 		HostapdSocket:     "/var/run/hostapd/global",
-		ArpingPath:        "/usr/sbin/arping",
+		ArpingPath:        "/usr/bin/arping",
 		DHCPLeasesFile:    "/tmp/dhcp.leases",
 		LANInterface:      "br-lan",
 		Provider:          "ubus",

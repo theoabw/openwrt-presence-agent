@@ -9,7 +9,7 @@ The initial provider requires:
 - a hostapd global control socket, `/var/run/hostapd/global` by default, that accepts
   `ATTACH` and emits `IFNAME`-scoped `AP-STA-CONNECTED` and
   `AP-STA-DISCONNECTED` events;
-- an `arping` executable, `/usr/sbin/arping` by default;
+- an `arping` executable, `/usr/bin/arping` by default;
 - a dnsmasq-compatible lease file, `/tmp/dhcp.leases` by default; and
 - a LAN interface, `br-lan` by default, supporting ARP and Linux route-netlink
   neighbor notifications.
