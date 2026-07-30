@@ -8,7 +8,7 @@ case "$1" in
 	call)
 		case "$2" in
 			hostapd.wlan0)
-				printf '%s\n' '{"freq":2412,"clients":{"02:00:00:00:00:01":{"signal":-40}}}'
+				printf '%s\n' '{"freq":2412,"clients":{"02:00:00:00:00:01":{"assoc":true,"authorized":true,"signal":-40}}}'
 				;;
 			hostapd.wlan1)
 				printf '%s\n' '{"freq":5180,"clients":{}}'

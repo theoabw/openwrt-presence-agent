@@ -41,7 +41,14 @@ func (s fakeSubscriber) Subscribe(ctx context.Context, _ []string, generation ui
 }
 
 func TestDecodeSnapshot(t *testing.T) {
-	data := []byte(`{"freq":5180,"clients":{"AA:BB:CC:DD:EE:FF":{"signal":-42},"invalid":{}}}`)
+	data := []byte(`{"freq":5180,"clients":{
+		"AA:BB:CC:DD:EE:FF":{"assoc":true,"authorized":true,"signal":-42},
+		"00:00:00:00:00:01":{"assoc":true,"authorized":false},
+		"00:00:00:00:00:02":{"assoc":false,"authorized":true},
+		"00:00:00:00:00:03":{"assoc":true},
+		"00:00:00:00:00:04":{"authorized":true},
+		"invalid":{"assoc":true,"authorized":true}
+	}}`)
 	got, err := decodeSnapshot(data, 10)
 	if err != nil {
 		t.Fatal(err)
