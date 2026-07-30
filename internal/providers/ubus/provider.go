@@ -308,7 +308,17 @@ func decodeSnapshot(data []byte, maxClients int) ([]string, error) {
 		return nil, fmt.Errorf("snapshot has %d clients, limit is %d", len(clients), maxClients)
 	}
 	out := make([]string, 0, len(clients))
-	for address := range clients {
+	for address, rawClient := range clients {
+		var client struct {
+			Assoc      bool `json:"assoc"`
+			Authorized bool `json:"authorized"`
+		}
+		if err := json.Unmarshal(rawClient, &client); err != nil {
+			continue
+		}
+		if !client.Assoc || !client.Authorized {
+			continue
+		}
 		id, err := identity.ClientID(address)
 		if err != nil {
 			continue
