@@ -39,6 +39,42 @@ func TestParseLeases(t *testing.T) {
 	}
 }
 
+func TestNeighborEventMustBeNewerThanReliableSnapshot(t *testing.T) {
+	snapshot := time.Now().UTC()
+	event := neighborEvent{at: snapshot.Add(time.Millisecond)}
+	if acceptNeighborEvent(event, false, snapshot) {
+		t.Fatal("event was accepted while snapshots were unavailable")
+	}
+	event.at = snapshot
+	if acceptNeighborEvent(event, true, snapshot) {
+		t.Fatal("event concurrent with the completed snapshot was accepted")
+	}
+	event.at = snapshot.Add(time.Millisecond)
+	if !acceptNeighborEvent(event, true, snapshot) {
+		t.Fatal("fresh event after a reliable snapshot was rejected")
+	}
+}
+
+func TestARPReplyRequiresFirstSenderMAC(t *testing.T) {
+	output := "Unicast reply from 192.168.1.10 [00:00:00:00:00:02] for [00:00:00:00:00:01]\n"
+	if arpReplyMatches(output, "mac:00:00:00:00:00:01") {
+		t.Fatal("destination MAC was accepted as the reply sender")
+	}
+	if !arpReplyMatches(output, "mac:00:00:00:00:00:02") {
+		t.Fatal("reply sender MAC was rejected")
+	}
+}
+
+func TestARPOutputIsBounded(t *testing.T) {
+	output := &boundedOutput{limit: 4}
+	if _, err := output.Write([]byte("123456")); err != nil {
+		t.Fatal(err)
+	}
+	if !output.exceeded || output.String() != "1234" {
+		t.Fatalf("bounded output = %q, exceeded=%v", output.String(), output.exceeded)
+	}
+}
+
 func TestSnapshotRequiresFreshARPReply(t *testing.T) {
 	dir := t.TempDir()
 	leases := filepath.Join(dir, "leases")
@@ -50,7 +86,12 @@ func TestSnapshotRequiresFreshARPReply(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(probe, []byte(
-		"#!/bin/sh\n[ \"$7\" = \"192.168.1.10\" ]\n",
+		"#!/bin/sh\n"+
+			"if [ \"$7\" = \"192.168.1.10\" ]; then\n"+
+			"  echo 'Unicast reply from 192.168.1.10 [00:00:00:00:00:01]'\n"+
+			"  exit 0\n"+
+			"fi\n"+
+			"exit 1\n",
 	), 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -86,6 +127,43 @@ func TestSnapshotRequiresFreshARPReply(t *testing.T) {
 	}
 }
 
+func TestSnapshotRejectsReplyFromDifferentLeaseMAC(t *testing.T) {
+	dir := t.TempDir()
+	leases := filepath.Join(dir, "leases")
+	probe := filepath.Join(dir, "arping")
+	if err := os.WriteFile(
+		leases,
+		[]byte("1 00:00:00:00:00:01 192.168.1.10 stale *\n"),
+		0o600,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(probe, []byte(
+		"#!/bin/sh\n"+
+			"echo '42 bytes from 00:00:00:00:00:02 (192.168.1.10): index=0 time=1 ms'\n"+
+			"exit 0\n",
+	), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	state, err := engine.New(engine.Limits{
+		MaxClients: 10, MaxSubscribers: 1, QueueSize: 4,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider := New(Config{
+		ArpingPath: probe, LeasesFile: leases, Interface: "br-lan",
+		Interval: time.Second, CommandTimeout: time.Second, MaxClients: 10,
+	}, state, slog.New(slog.NewTextHandler(io.Discard, nil)))
+
+	if _, err := provider.snapshot(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := state.Client("mac:00:00:00:00:00:01"); ok {
+		t.Fatal("stale lease MAC was treated as reachable from another client's reply")
+	}
+}
+
 func TestReachableClientIsPublishedBeforeSlowSweepCompletes(t *testing.T) {
 	dir := t.TempDir()
 	leases := filepath.Join(dir, "leases")
@@ -98,7 +176,10 @@ func TestReachableClientIsPublishedBeforeSlowSweepCompletes(t *testing.T) {
 	}
 	if err := os.WriteFile(probe, []byte(
 		"#!/bin/sh\n"+
-			"if [ \"$7\" = \"192.168.1.10\" ]; then exit 0; fi\n"+
+			"if [ \"$7\" = \"192.168.1.10\" ]; then\n"+
+			"  echo 'Unicast reply from 192.168.1.10 [00:00:00:00:00:01]'\n"+
+			"  exit 0\n"+
+			"fi\n"+
 			"sleep 1\nexit 1\n",
 	), 0o700); err != nil {
 		t.Fatal(err)
@@ -147,7 +228,10 @@ func TestSnapshotDoesNotProbeExcludedWiFiClient(t *testing.T) {
 	), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(probe, []byte("#!/bin/sh\nexit 0\n"), 0o700); err != nil {
+	if err := os.WriteFile(probe, []byte(
+		"#!/bin/sh\n"+
+			"echo 'Unicast reply from 192.168.1.10 [00:00:00:00:00:01]'\n",
+	), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	state, err := engine.New(engine.Limits{MaxClients: 10, MaxSubscribers: 1, QueueSize: 4})

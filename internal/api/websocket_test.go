@@ -87,6 +87,10 @@ func TestPassiveWebSocketClientDoesNotRequireInboundTraffic(t *testing.T) {
 
 func TestWebSocketStartsWithSnapshotThenOrderedEvents(t *testing.T) {
 	server, state := testServer(t)
+	state.SetProvider(protocol.Provider{
+		ID: "ubus-hostapd", Kind: "wifi", Status: "healthy",
+		LastSnapshotAt: time.Now().UTC(),
+	})
 	httpServer := http.Server{Handler: server.http.Handler}
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {

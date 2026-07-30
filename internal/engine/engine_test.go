@@ -44,6 +44,96 @@ func TestProviderFailureCreatesUncertainty(t *testing.T) {
 	}
 }
 
+func TestHealthyProviderSnapshotDoesNotResurrectStaleConnection(t *testing.T) {
+	e := newTestEngine(t)
+	now := time.Now().UTC()
+	clientID := "mac:00:11:22:33:44:55"
+	_ = e.Associate("ubus", "hostapd.wlan0", clientID, now, "event")
+	e.SetProvider(protocol.Provider{ID: "ubus", Status: "unavailable"})
+
+	if err := e.Reconcile(
+		"wired", map[string][]string{"br-lan": nil}, now.Add(time.Second),
+	); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := e.Client(clientID)
+	if got.State != protocol.StateUnknown || got.Present != nil {
+		t.Fatalf("client with only stale connections = %#v", got)
+	}
+}
+
+func TestProviderFailureRetainsPresenceFromHealthyProvider(t *testing.T) {
+	e := newTestEngine(t)
+	now := time.Now().UTC()
+	clientID := "mac:00:11:22:33:44:55"
+	_ = e.Associate("ubus", "hostapd.wlan0", clientID, now, "event")
+	_ = e.Associate("wired", "br-lan", clientID, now, "event")
+
+	e.SetProvider(protocol.Provider{ID: "ubus", Status: "unavailable"})
+	got, _ := e.Client(clientID)
+	if got.State != protocol.StatePresent || got.Present == nil || !*got.Present {
+		t.Fatalf("client with a healthy connection = %#v", got)
+	}
+}
+
+func TestProviderFailureDoesNotChangeUnrelatedAbsentClient(t *testing.T) {
+	e := newTestEngine(t)
+	now := time.Now().UTC()
+	clientID := "mac:00:11:22:33:44:55"
+	if err := e.Reconcile(
+		"wired", map[string][]string{"br-lan": {clientID}}, now,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.Reconcile(
+		"wired", map[string][]string{"br-lan": nil}, now.Add(time.Second),
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	e.SetProvider(protocol.Provider{ID: "ubus", Status: "unavailable"})
+	got, _ := e.Client(clientID)
+	if got.State != protocol.StateAbsent || got.Present == nil || *got.Present {
+		t.Fatalf("unrelated absent client after provider failure = %#v", got)
+	}
+}
+
+func TestDisassociationDoesNotCountRemainingStaleConnection(t *testing.T) {
+	e := newTestEngine(t)
+	now := time.Now().UTC()
+	clientID := "mac:00:11:22:33:44:55"
+	_ = e.Associate("wired", "br-lan", clientID, now, "event")
+	_ = e.Associate("ubus", "hostapd.wlan0", clientID, now, "event")
+	e.SetProvider(protocol.Provider{ID: "wired", Status: "unavailable"})
+
+	e.Disassociate("ubus", "hostapd.wlan0", clientID, now.Add(time.Second), "event")
+	got, _ := e.Client(clientID)
+	if got.State != protocol.StateUnknown || got.Present != nil {
+		t.Fatalf("client with only a stale connection after departure = %#v", got)
+	}
+}
+
+func TestSourceReconcileRecoversStaleConnection(t *testing.T) {
+	e := newTestEngine(t)
+	now := time.Now().UTC()
+	clientID := "mac:00:11:22:33:44:55"
+	_ = e.Associate("ubus", "hostapd.wlan0", clientID, now, "event")
+	e.SetProvider(protocol.Provider{ID: "ubus", Status: "unavailable"})
+
+	if err := e.ReconcileSource(
+		"ubus", "hostapd.wlan0", []string{clientID}, now.Add(time.Second),
+	); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := e.Client(clientID)
+	if got.State != protocol.StatePresent || got.Present == nil || !*got.Present {
+		t.Fatalf("client after authoritative source recovery = %#v", got)
+	}
+	if len(got.Connections) != 1 || got.Connections[0].Stale {
+		t.Fatalf("connection after authoritative source recovery = %#v", got.Connections)
+	}
+}
+
 func TestReconcileCorrectsMissedEvents(t *testing.T) {
 	e := newTestEngine(t)
 	now := time.Now().UTC()
@@ -183,6 +273,31 @@ func TestAbsentClientIsEvictedAtLimit(t *testing.T) {
 	}
 	if _, ok := e.Client("mac:02:00:00:00:00:02"); !ok {
 		t.Fatal("new client was not admitted")
+	}
+}
+
+func TestAllStaleClientIsEvictedAtLimit(t *testing.T) {
+	e, err := New(Limits{MaxClients: 1, MaxSubscribers: 1, QueueSize: 8})
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	first := "mac:02:00:00:00:00:01"
+	second := "mac:02:00:00:00:00:02"
+	if err := e.Associate("ubus", "hostapd.wlan0", first, now, "event"); err != nil {
+		t.Fatal(err)
+	}
+	e.SetProvider(protocol.Provider{ID: "ubus", Status: "unavailable"})
+	if err := e.Associate(
+		"wired", "br-lan", second, now.Add(time.Second), "event",
+	); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := e.Client(first); ok {
+		t.Fatal("all-stale client was retained at the limit")
+	}
+	if _, ok := e.Client(second); !ok {
+		t.Fatal("new live client was not admitted")
 	}
 }
 

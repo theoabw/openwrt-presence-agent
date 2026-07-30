@@ -99,12 +99,24 @@ func connectionID(provider, source string) string {
 	return provider + ":" + source
 }
 
+func reducedState(c *client, empty protocol.PresenceState) protocol.PresenceState {
+	for _, conn := range c.Connections {
+		if !conn.Stale {
+			return protocol.StatePresent
+		}
+	}
+	if len(c.Connections) != 0 {
+		return protocol.StateUnknown
+	}
+	return empty
+}
+
 func (e *Engine) Associate(provider, source, clientID string, at time.Time, reason string) error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	c, ok := e.clients[clientID]
 	if !ok {
-		if len(e.clients) >= e.limits.MaxClients && !e.evictOldestAbsentLocked(nil) {
+		if len(e.clients) >= e.limits.MaxClients && !e.evictOldestNonPresentLocked(nil) {
 			return fmt.Errorf("client limit reached")
 		}
 		c = &client{ID: clientID, Connections: make(map[string]protocol.Connection), FirstSeenAt: at}
@@ -145,8 +157,9 @@ func (e *Engine) Disassociate(provider, source, clientID string, at time.Time, r
 	}
 	delete(c.Connections, id)
 	c.LastSeenAt = at
-	if len(c.Connections) == 0 {
-		c.State = protocol.StateUnknown
+	old := c.State
+	c.State = reducedState(c, protocol.StateUnknown)
+	if c.State != old {
 		e.emitLocked("client.presence_changed", reason, e.publicClientLocked(c))
 	} else {
 		e.emitLocked("client.updated", reason, e.publicClientLocked(c))
@@ -174,7 +187,7 @@ func (e *Engine) Reconcile(provider string, stations map[string][]string, at tim
 		}
 	}
 	for len(e.clients)+newClients > e.limits.MaxClients {
-		if !e.evictOldestAbsentLocked(wanted) {
+		if !e.evictOldestNonPresentLocked(wanted) {
 			return fmt.Errorf("snapshot would exceed client limit")
 		}
 	}
@@ -216,11 +229,7 @@ func (e *Engine) Reconcile(provider string, stations map[string][]string, at tim
 	}
 	for _, c := range e.clients {
 		old := c.State
-		if len(c.Connections) > 0 {
-			c.State = protocol.StatePresent
-		} else {
-			c.State = protocol.StateAbsent
-		}
+		c.State = reducedState(c, protocol.StateAbsent)
 		if c.State != old {
 			c.LastSeenAt = at
 			e.emitLocked("client.presence_changed", "snapshot_reconciliation", e.publicClientLocked(c))
@@ -257,7 +266,7 @@ func (e *Engine) ReconcileSource(
 		for id := range wanted {
 			protected[id] = nil
 		}
-		if !e.evictOldestAbsentLocked(protected) {
+		if !e.evictOldestNonPresentLocked(protected) {
 			return fmt.Errorf("source snapshot would exceed client limit")
 		}
 	}
@@ -281,9 +290,13 @@ func (e *Engine) ReconcileSource(
 			e.clients[id] = c
 		}
 		if conn, ok := c.Connections[connection]; ok {
+			wasStale := conn.Stale
 			conn.LastSeenAt = at
 			conn.Stale = false
 			c.Connections[connection] = conn
+			if wasStale {
+				affected[id] = c
+			}
 		} else {
 			conn := protocol.Connection{
 				ID: connection, Provider: provider, SourceInstance: source,
@@ -295,11 +308,7 @@ func (e *Engine) ReconcileSource(
 	}
 	for _, c := range affected {
 		old := c.State
-		if len(c.Connections) > 0 {
-			c.State = protocol.StatePresent
-		} else {
-			c.State = protocol.StateAbsent
-		}
+		c.State = reducedState(c, protocol.StateAbsent)
 		if c.State != old {
 			c.LastSeenAt = at
 			e.emitLocked(
@@ -323,17 +332,27 @@ func (e *Engine) ReconcileSource(
 	return nil
 }
 
-func (e *Engine) evictOldestAbsentLocked(exclude map[string]map[string]struct{}) bool {
+func (e *Engine) evictOldestNonPresentLocked(exclude map[string]map[string]struct{}) bool {
 	var candidate *client
+	candidateRank := 0
 	for id, current := range e.clients {
-		if current.State != protocol.StateAbsent || len(current.Connections) != 0 {
+		rank := 0
+		switch {
+		case current.State == protocol.StateAbsent && len(current.Connections) == 0:
+			rank = 1
+		case current.State == protocol.StateUnknown &&
+			reducedState(current, protocol.StateUnknown) == protocol.StateUnknown:
+			rank = 2
+		default:
 			continue
 		}
 		if _, protected := exclude[id]; protected {
 			continue
 		}
-		if candidate == nil || current.LastSeenAt.Before(candidate.LastSeenAt) {
+		if candidate == nil || rank < candidateRank ||
+			rank == candidateRank && current.LastSeenAt.Before(candidate.LastSeenAt) {
 			candidate = current
+			candidateRank = rank
 		}
 	}
 	if candidate == nil {
@@ -362,12 +381,29 @@ func (e *Engine) SetProvider(p protocol.Provider) {
 					changed = true
 				}
 			}
-			if changed && c.State != protocol.StateUnknown {
-				c.State = protocol.StateUnknown
+			if !changed {
+				continue
+			}
+			state := reducedState(c, protocol.StateUnknown)
+			if c.State != state {
+				c.State = state
 				e.emitLocked("client.presence_changed", "provider_unavailable", e.publicClientLocked(c))
+			} else if changed {
+				e.emitLocked("client.updated", "provider_unavailable", e.publicClientLocked(c))
 			}
 		}
 	}
+}
+
+func (e *Engine) HasAuthoritativeSnapshot(kind string) bool {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	for _, provider := range e.providers {
+		if provider.Kind == kind && !provider.LastSnapshotAt.IsZero() {
+			return true
+		}
+	}
+	return false
 }
 
 func (e *Engine) Provider(id string) (protocol.Provider, bool) {

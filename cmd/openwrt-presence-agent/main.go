@@ -61,21 +61,29 @@ func run(args []string) int {
 		logger.Error("cannot initialize provider", "error", err)
 		return 1
 	}
-	go func() {
-		if err := provider.Run(ctx); err != nil && ctx.Err() == nil {
-			logger.Error("provider stopped unexpectedly", "error", err)
-		}
-	}()
+	providerResult := make(chan error, 1)
+	go func() { providerResult <- provider.Run(ctx) }()
 
 	server := api.New(cfg, state, auth.NewBearer(token), agentID, version, logger)
 	result := make(chan error, 1)
 	go func() { result <- server.ListenAndServe() }()
 	logger.Info("observer started", "version", version, "address", cfg.Address(), "provider", cfg.Provider)
+	exitCode := 0
 	select {
 	case err := <-result:
 		if err != nil && !errors.Is(err, http.ErrServerClosed) {
 			logger.Error("API server failed", "error", err)
-			return 1
+			exitCode = 1
+		}
+	case err := <-providerResult:
+		if ctx.Err() == nil {
+			if err != nil {
+				logger.Error("provider stopped unexpectedly", "error", err)
+			} else {
+				logger.Error("provider stopped unexpectedly")
+			}
+			exitCode = 1
+			stop()
 		}
 	case <-ctx.Done():
 	}
@@ -86,7 +94,7 @@ func run(args []string) int {
 		return 1
 	}
 	logger.Info("observer stopped")
-	return 0
+	return exitCode
 }
 
 func newLogger(level string) *slog.Logger {

@@ -12,8 +12,8 @@ All endpoints use the `/v1` major-version prefix. Additive fields and event
 types may be introduced without changing that prefix. Consumers must reconnect
 and accept the initial internally consistent snapshot whenever the stream epoch
 changes, the connection closes, or a sequence gap is detected. Consumers must
-also check health and provider status before treating that state as
-provider-authoritative.
+also check health and retry state endpoints that return HTTP 503 while the
+initial authoritative Wi-Fi snapshot is unavailable.
 
 `GET /v1/info` advertises separate `wifi_snapshot`, `wifi_events`,
 `wired_snapshot`, and `wired_events` capabilities. Wired events include fresh

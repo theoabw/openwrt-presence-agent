@@ -3,12 +3,14 @@ package wired
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"fmt"
 	"log/slog"
 	"net"
 	"os"
 	"os/exec"
+	"regexp"
 	"sort"
 	"strings"
 	"sync"
@@ -21,7 +23,10 @@ import (
 const (
 	providerID          = "wired-arp"
 	maxProbeConcurrency = 32
+	maxARPOutput        = 64 * 1024
 )
+
+var macAddressPattern = regexp.MustCompile(`(?i)(?:[0-9a-f]{2}:){5}[0-9a-f]{2}`)
 
 type Config struct {
 	ArpingPath, LeasesFile, Interface string
@@ -41,6 +46,26 @@ func New(c Config, sink observation.Sink, logger *slog.Logger) *Provider {
 }
 
 type lease struct{ mac, ip string }
+
+type boundedOutput struct {
+	bytes.Buffer
+	limit    int
+	exceeded bool
+}
+
+func (b *boundedOutput) Write(value []byte) (int, error) {
+	size := len(value)
+	remaining := b.limit - b.Len()
+	if remaining < len(value) {
+		b.exceeded = true
+		if remaining < 0 {
+			remaining = 0
+		}
+		value = value[:remaining]
+	}
+	_, _ = b.Buffer.Write(value)
+	return size, nil
+}
 
 func parseLeases(file *os.File, limit int) ([]lease, error) {
 	var leases []lease
@@ -66,13 +91,20 @@ func (p *Provider) Run(ctx context.Context) error {
 	p.status("initializing", "", time.Time{})
 	neighborEvents := make(chan neighborEvent, p.config.MaxClients)
 	go p.runNeighborEvents(ctx, neighborEvents)
+	var (
+		eventsReliable bool
+		lastSnapshot   time.Time
+	)
 	poll := func() {
 		at, err := p.snapshot(ctx)
 		if err != nil {
+			eventsReliable = false
 			p.status("unavailable", err.Error(), time.Time{})
 			p.logger.Warn("wired presence snapshot failed", "error", err)
 			return
 		}
+		lastSnapshot = at
+		eventsReliable = true
 		p.status("healthy", "", at)
 	}
 	poll()
@@ -84,6 +116,9 @@ func (p *Provider) Run(ctx context.Context) error {
 			p.status("stopped", "", time.Time{})
 			return nil
 		case event := <-neighborEvents:
+			if !acceptNeighborEvent(event, eventsReliable, lastSnapshot) {
+				continue
+			}
 			if p.config.Excluded != nil && p.config.Excluded(event.clientID) {
 				continue
 			}
@@ -94,6 +129,10 @@ func (p *Provider) Run(ctx context.Context) error {
 			poll()
 		}
 	}
+}
+
+func acceptNeighborEvent(event neighborEvent, reliable bool, lastSnapshot time.Time) bool {
+	return reliable && event.at.After(lastSnapshot)
 }
 
 func (p *Provider) snapshot(parent context.Context) (time.Time, error) {
@@ -129,7 +168,7 @@ func (p *Provider) snapshot(parent context.Context) (time.Time, error) {
 		go func() {
 			defer workers.Done()
 			for candidate := range work {
-				reachable := p.reachable(parent, candidate.ip)
+				reachable := p.reachable(parent, candidate)
 				results <- result{
 					id: candidate.mac, reachable: reachable, at: time.Now().UTC(),
 				}
@@ -190,12 +229,41 @@ func (p *Provider) runNeighborEvents(ctx context.Context, events chan<- neighbor
 	}
 }
 
-func (p *Provider) reachable(parent context.Context, ip string) bool {
+func (p *Provider) reachable(parent context.Context, candidate lease) bool {
 	ctx, cancel := context.WithTimeout(parent, p.config.CommandTimeout)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, p.config.ArpingPath, "-c", "1", "-w", "1", "-I", p.config.Interface, ip)
+	cmd := exec.CommandContext(
+		ctx,
+		p.config.ArpingPath,
+		"-c", "1",
+		"-w", "1",
+		"-I", p.config.Interface,
+		candidate.ip,
+	)
 	cmd.Env = []string{"PATH=/usr/sbin:/usr/bin:/sbin:/bin", "LANG=C", "LC_ALL=C"}
-	return cmd.Run() == nil
+	output := &boundedOutput{limit: maxARPOutput}
+	cmd.Stdout = output
+	cmd.Stderr = output
+	if err := cmd.Run(); err != nil || output.exceeded {
+		return false
+	}
+	return arpReplyMatches(output.String(), candidate.mac)
+}
+
+func arpReplyMatches(output, clientID string) bool {
+	for _, line := range strings.Split(output, "\n") {
+		lower := strings.ToLower(line)
+		if !strings.Contains(lower, "reply from") &&
+			!strings.Contains(lower, "bytes from") {
+			continue
+		}
+		address := macAddressPattern.FindString(line)
+		id, err := identity.ClientID(address)
+		if err == nil && id == clientID {
+			return true
+		}
+	}
+	return false
 }
 
 func (p *Provider) status(status, lastError string, snapshot time.Time) {
