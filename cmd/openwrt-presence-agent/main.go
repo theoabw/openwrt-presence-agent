@@ -48,12 +48,13 @@ func run(args []string) int {
 	}
 	state, err := engine.New(engine.Limits{
 		MaxClients: cfg.MaxClients, MaxSubscribers: cfg.MaxStreamClients,
-		QueueSize: cfg.StreamQueueSize,
+		QueueSize: cfg.StreamQueueSize, ReconnectGrace: cfg.ReconnectGrace,
 	})
 	if err != nil {
 		logger.Error("cannot initialize state engine", "error", err)
 		return 1
 	}
+	defer state.Stop()
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 	provider, err := providers.New(cfg, state, logger)

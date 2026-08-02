@@ -24,6 +24,16 @@ the provider immediately verifies that BSS with a source-scoped snapshot. Both
 association and disassociation events are verified before publication. This is
 correctness recovery rather than a time-based presence debounce.
 
+When the observer is configured with a nonzero `reconnect_grace`, losing the
+last known Wi-Fi connection instead starts a bounded reconnection window: the
+client remains `present` for the configured duration. A reconnection within the
+window cancels the hold and emits nothing, absorbing transient radio timeouts,
+roams, and driver kicks. When the window elapses without a reconnection, the
+departure is announced once with reason `reconnect_grace_expired` and the same
+eventual state as the immediate path. Wired absence remains authoritative and
+immediate, and provider failure is never delayed; it stays stream-integrity
+uncertainty.
+
 `GET /v1/health` returns:
 
 - HTTP 503 before any authoritative provider snapshot;

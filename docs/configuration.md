@@ -28,6 +28,7 @@ script converts each option to an explicit daemon argument.
 | `max_stream_clients` | `4` | `1`–`1024`. |
 | `stream_queue_size` | `64` | `1`–`4096` events per stream. |
 | `log_level` | `info` | `error`, `warn`, `info`, or `debug`. |
+| `reconnect_grace` | `0s` | Keep a client present for this long after its last connection is lost while waiting for a quick reconnection. `0` (default) is immediate and literal. When enabled it must be `1s`–`10m`.
 
 Invalid values stop startup with a clear error. The listener deliberately does
 not derive or guess a LAN address: ambiguous automatic binding falls back to
@@ -57,6 +58,35 @@ On startup, wired probing waits for either the first authoritative hostapd
 snapshot or a definitive Wi-Fi-unavailable status. This prevents an initial
 wired sweep from racing the Wi-Fi exclusion inventory without blocking
 Ethernet indefinitely on a router with unusable radios.
+
+## Reconnect grace
+
+By default a client that loses its last known connection is reported
+immediately (`unknown` until an authoritative snapshot confirms `absent`).
+Phones and roaming clients are sometimes kicked off a radio by a timeout,
+roaming decision, or driver retry limit and rejoin within a second or two.
+Setting `reconnect_grace` keeps such a client `present` for the configured
+window after its last connection is lost while checking for that fast
+reconnection:
+
+- A Wi-Fi disassociation, or an authoritative Wi-Fi snapshot that would remove
+  the last live connection, starts the window instead of an immediate
+  departure.
+- If the client reconnects before the window expires, no departure is ever
+  announced: the flap is absorbed. If the window expires without a
+  reconnection, the departure is announced once (reason
+  `reconnect_grace_expired`) with the same eventual state as the immediate
+  path.
+- A provider becoming unavailable is stream-integrity loss, not a client
+  departure, and is never delayed.
+- Wired departures are unaffected: they are already actively ARP-confirmed and
+  announced immediately, so real disconnects on Ethernet are never delayed.
+
+The mechanism is vendor-neutral: it does not parse vendor log messages and
+works on any OpenWrt router regardless of radio driver. Because authoritative
+snapshots already confirm absence, the window is best kept short (a few
+seconds), matching how quickly phones normally rejoin. Diagnostics report the
+current number of clients in the window as `pending_departures`.
 
 ## Token handling
 

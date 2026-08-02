@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestConservativeDefaults(t *testing.T) {
@@ -65,10 +66,30 @@ func TestUCIDefaultsMatchBinaryDefaults(t *testing.T) {
 		"max_stream_clients":       strconv.Itoa(c.MaxStreamClients),
 		"stream_queue_size":        strconv.Itoa(c.StreamQueueSize),
 		"log_level":                c.LogLevel,
+		"reconnect_grace":          c.ReconnectGrace.String(),
 	}
 	for name, want := range expected {
 		if got := values[name]; got != want {
 			t.Errorf("UCI %s = %q, binary default = %q", name, got, want)
+		}
+	}
+}
+
+func TestReconnectGraceValidationBounds(t *testing.T) {
+	valid := []time.Duration{0, time.Second, 5 * time.Minute, 10 * time.Minute}
+	for _, d := range valid {
+		c := Default()
+		c.ReconnectGrace = d
+		if err := c.Validate(); err != nil {
+			t.Errorf("reconnect-grace %v rejected: %v", d, err)
+		}
+	}
+	invalid := []time.Duration{-1, 500 * time.Millisecond, 10*time.Minute + time.Second}
+	for _, d := range invalid {
+		c := Default()
+		c.ReconnectGrace = d
+		if err := c.Validate(); err == nil {
+			t.Errorf("reconnect-grace %v accepted", d)
 		}
 	}
 }

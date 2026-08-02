@@ -17,6 +17,34 @@ func newTestEngine(t *testing.T) *Engine {
 	return e
 }
 
+func newGraceEngine(t *testing.T) *Engine {
+	t.Helper()
+	e, err := New(Limits{
+		MaxClients: 10, MaxSubscribers: 2, QueueSize: 8,
+		ReconnectGrace: 5 * time.Second,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.SetProvider(protocol.Provider{ID: "ubus", Kind: "wifi", Status: "healthy"})
+	t.Cleanup(e.Stop)
+	return e
+}
+
+func assertNoClientEvents(t *testing.T, events <-chan protocol.Event) {
+	t.Helper()
+	for {
+		select {
+		case ev := <-events:
+			if ev.Type != "state.resynchronized" {
+				t.Fatalf("unexpected client event during hold: %s", ev.Type)
+			}
+		default:
+			return
+		}
+	}
+}
+
 func TestDisassociationIsConnectionScoped(t *testing.T) {
 	e := newTestEngine(t)
 	now := time.Now().UTC()
@@ -298,6 +326,203 @@ func TestAllStaleClientIsEvictedAtLimit(t *testing.T) {
 	}
 	if _, ok := e.Client(second); !ok {
 		t.Fatal("new live client was not admitted")
+	}
+}
+
+func TestReconnectGraceHoldsLastDisassociation(t *testing.T) {
+	e := newGraceEngine(t)
+	now := time.Now().UTC()
+	clientID := "mac:00:11:22:33:44:55"
+	_ = e.Associate("ubus", "hostapd.wlan0", clientID, now, "event")
+	snapshot, events, cancel, err := e.Subscribe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cancel()
+	e.Disassociate("ubus", "hostapd.wlan0", clientID, now, "event")
+	got, _ := e.Client(clientID)
+	if got.State != protocol.StatePresent || got.Present == nil || !*got.Present {
+		t.Fatalf("client during reconnect grace = %#v", got)
+	}
+	if len(got.Connections) != 1 {
+		t.Fatalf("connection removed during grace = %#v", got.Connections)
+	}
+	select {
+	case ev := <-events:
+		t.Fatalf("unexpected event during grace: %s", ev.Type)
+	default:
+	}
+	if e.Stats()["pending_departures"] != 1 {
+		t.Fatalf("pending_departures = %v", e.Stats()["pending_departures"])
+	}
+	e.sweepPending(now.Add(30 * time.Second))
+	got, _ = e.Client(clientID)
+	if got.State != protocol.StateUnknown || got.Present != nil {
+		t.Fatalf("client after grace elapsed = %#v", got)
+	}
+	if len(got.Connections) != 0 {
+		t.Fatalf("connection after grace = %#v", got.Connections)
+	}
+	ev := <-events
+	if ev.Type != "client.presence_changed" {
+		t.Fatalf("event after grace = %s, want client.presence_changed", ev.Type)
+	}
+	if ev.Sequence != snapshot.Sequence+1 {
+		t.Fatalf("event sequence = %d, want %d", ev.Sequence, snapshot.Sequence+1)
+	}
+	if e.Stats()["pending_departures"] != 0 {
+		t.Fatalf("pending_departures after grace = %v", e.Stats()["pending_departures"])
+	}
+}
+
+func TestReconnectGraceAbsorbsReconnectFlap(t *testing.T) {
+	e := newGraceEngine(t)
+	now := time.Now().UTC()
+	clientID := "mac:00:11:22:33:44:55"
+	_ = e.Associate("ubus", "hostapd.wlan0", clientID, now, "event")
+	_, events, cancel, err := e.Subscribe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cancel()
+	e.Disassociate("ubus", "hostapd.wlan0", clientID, now.Add(time.Second), "event")
+	_ = e.Associate("ubus", "hostapd.wlan0", clientID, now.Add(2*time.Second), "event")
+	e.sweepPending(now.Add(30 * time.Second))
+	got, _ := e.Client(clientID)
+	if got.State != protocol.StatePresent || got.Present == nil || !*got.Present {
+		t.Fatalf("client after absorbed flap = %#v", got)
+	}
+	select {
+	case ev := <-events:
+		t.Fatalf("flap produced event: %s", ev.Type)
+	default:
+	}
+	if e.Stats()["pending_departures"] != 0 {
+		t.Fatalf("pending_departures after flap = %v", e.Stats()["pending_departures"])
+	}
+}
+
+func TestReconnectGraceDoesNotHoldScopedDisassociation(t *testing.T) {
+	e := newGraceEngine(t)
+	now := time.Now().UTC()
+	clientID := "mac:00:11:22:33:44:55"
+	_ = e.Associate("ubus", "hostapd.wlan0", clientID, now, "event")
+	_ = e.Associate("ubus", "hostapd.wlan1", clientID, now, "event")
+	e.Disassociate("ubus", "hostapd.wlan0", clientID, now, "event")
+	got, _ := e.Client(clientID)
+	if got.State != protocol.StatePresent || len(got.Connections) != 1 {
+		t.Fatalf("client after scoped disconnect with grace = %#v", got)
+	}
+	if e.Stats()["pending_departures"] != 0 {
+		t.Fatalf("pending_departures = %v", e.Stats()["pending_departures"])
+	}
+}
+
+func TestReconnectGraceReconcileHoldsAuthoritativeRemoval(t *testing.T) {
+	e := newGraceEngine(t)
+	now := time.Now().UTC()
+	clientID := "mac:00:11:22:33:44:55"
+	_ = e.Associate("ubus", "hostapd.wlan0", clientID, now, "event")
+	_, events, cancel, err := e.Subscribe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cancel()
+	if err := e.Reconcile(
+		"ubus", map[string][]string{"hostapd.wlan0": nil}, now.Add(time.Second),
+	); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := e.Client(clientID)
+	if got.State != protocol.StatePresent {
+		t.Fatalf("client during reconcile grace = %#v", got)
+	}
+	assertNoClientEvents(t, events)
+	e.sweepPending(now.Add(30 * time.Second))
+	got, _ = e.Client(clientID)
+	if got.State != protocol.StateUnknown || got.Present != nil {
+		t.Fatalf("client after reconcile grace = %#v", got)
+	}
+	if ev := <-events; ev.Type != "client.presence_changed" {
+		t.Fatalf("event after reconcile grace = %s", ev.Type)
+	}
+}
+
+func TestReconnectGraceReconcileConfirmsPresence(t *testing.T) {
+	e := newGraceEngine(t)
+	now := time.Now().UTC()
+	clientID := "mac:00:11:22:33:44:55"
+	_ = e.Associate("ubus", "hostapd.wlan0", clientID, now, "event")
+	_, events, cancel, err := e.Subscribe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cancel()
+	e.Disassociate("ubus", "hostapd.wlan0", clientID, now, "event")
+	if err := e.Reconcile(
+		"ubus", map[string][]string{"hostapd.wlan0": {clientID}}, now.Add(time.Second),
+	); err != nil {
+		t.Fatal(err)
+	}
+	e.sweepPending(now.Add(30 * time.Second))
+	got, _ := e.Client(clientID)
+	if got.State != protocol.StatePresent || got.Present == nil || !*got.Present {
+		t.Fatalf("client after authoritative confirmation = %#v", got)
+	}
+	assertNoClientEvents(t, events)
+	if e.Stats()["pending_departures"] != 0 {
+		t.Fatalf("pending_departures = %v", e.Stats()["pending_departures"])
+	}
+}
+
+func TestReconnectGraceSourceReconcileHolds(t *testing.T) {
+	e := newGraceEngine(t)
+	now := time.Now().UTC()
+	clientID := "mac:00:11:22:33:44:55"
+	_ = e.Associate("ubus", "hostapd.wlan0", clientID, now, "event")
+	_, events, cancel, err := e.Subscribe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cancel()
+	if err := e.ReconcileSource("ubus", "hostapd.wlan0", nil, now.Add(time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := e.Client(clientID)
+	if got.State != protocol.StatePresent {
+		t.Fatalf("client during source reconcile grace = %#v", got)
+	}
+	assertNoClientEvents(t, events)
+	e.sweepPending(now.Add(30 * time.Second))
+	got, _ = e.Client(clientID)
+	if got.State != protocol.StateUnknown || got.Present != nil {
+		t.Fatalf("client after source reconcile grace = %#v", got)
+	}
+	if ev := <-events; ev.Type != "client.presence_changed" {
+		t.Fatalf("event after source reconcile grace = %s", ev.Type)
+	}
+}
+
+func TestReconnectGraceDoesNotHoldWiredDeparture(t *testing.T) {
+	e := newGraceEngine(t)
+	now := time.Now().UTC()
+	clientID := "mac:00:11:22:33:44:55"
+	if err := e.Reconcile(
+		"wired", map[string][]string{"br-lan": {clientID}}, now,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.Reconcile(
+		"wired", map[string][]string{"br-lan": nil}, now.Add(time.Second),
+	); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := e.Client(clientID)
+	if got.State != protocol.StateAbsent || got.Present == nil || *got.Present {
+		t.Fatalf("wired departure held by reconnect grace = %#v", got)
+	}
+	if e.Stats()["pending_departures"] != 0 {
+		t.Fatalf("pending_departures for wired = %v", e.Stats()["pending_departures"])
 	}
 }
 
