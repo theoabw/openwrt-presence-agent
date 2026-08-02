@@ -157,6 +157,7 @@ func (s *Server) diagnostics(w http.ResponseWriter, _ *http.Request) {
 			"provider_queue_size":      s.config.ProviderQueueSize,
 			"max_stream_clients":       s.config.MaxStreamClients,
 			"stream_queue_size":        s.config.StreamQueueSize,
+			"departure_delay":          s.config.DepartureDelay.String(),
 			"authentication":           "bearer",
 		},
 		"providers": s.engine.Providers(), "state": s.engine.Stats(),

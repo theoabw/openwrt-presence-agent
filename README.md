@@ -132,6 +132,7 @@ events are silent or missed.
 - event-assisted wired reachability with bounded concurrent ARP confirmation;
 - startup ordering and MAC filtering that keep Wi-Fi clients off the wired path;
 - periodic and recovery-triggered authoritative reconciliation;
+- optional opt-in departure hold for flap-prone clients;
 - bounded client state and slow-consumer disconnection;
 - authenticated, read-only REST snapshots and WebSocket events;
 - conservative loopback binding by default;
@@ -142,6 +143,18 @@ The only hardware-verified target is the GL.iNet Flint 3. Compatibility is
 based on runtime capabilities rather than vendor name. See
 [compatibility](docs/compatibility.md) for the evidence required before a
 device is claimed as supported.
+
+### Departure delay (optional)
+
+Default behavior is literal and immediate: a client that loses its last known
+connection is reported departed right away. Some phones and roaming clients
+briefly drop and instantly rejoin the same radio, which consumers observe as
+a short presence flap. The opt-in `departure_delay` option (off by default,
+`1s`–`10m` when enabled) holds such a client `present` for the configured
+window after its last connection is lost. If it reconnects in time the flap is
+absorbed silently; if not, the departure is announced once. Each router
+operator decides whether to enable it for their network. See
+[configuration](docs/configuration.md#departure-delay).
 
 ## Install on a router
 

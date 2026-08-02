@@ -28,6 +28,7 @@ script converts each option to an explicit daemon argument.
 | `max_stream_clients` | `4` | `1`–`1024`. |
 | `stream_queue_size` | `64` | `1`–`4096` events per stream. |
 | `log_level` | `info` | `error`, `warn`, `info`, or `debug`. |
+| `departure_delay` | `0s` | Hold a client present after its last connection is lost before announcing departure. `0` (default) is immediate and literal. When enabled it must be `1s`–`10m`.
 
 Invalid values stop startup with a clear error. The listener deliberately does
 not derive or guess a LAN address: ambiguous automatic binding falls back to
@@ -57,6 +58,29 @@ On startup, wired probing waits for either the first authoritative hostapd
 snapshot or a definitive Wi-Fi-unavailable status. This prevents an initial
 wired sweep from racing the Wi-Fi exclusion inventory without blocking
 Ethernet indefinitely on a router with unusable radios.
+
+## Departure delay
+
+By default a client that loses its last known connection is reported
+immediately (`unknown` until an authoritative snapshot confirms `absent`). Some
+phones and roaming clients briefly drop and rejoin the same radio, producing a
+short presence flap for consumers. Setting `departure_delay` holds such a
+client `present` for the configured window after its last connection is lost:
+
+- A disassociation, or an authoritative snapshot that would remove the last
+  live connection, starts a hold instead of an immediate departure.
+- If the client reconnects before the hold expires, no departure is ever
+  announced: the flap is absorbed.
+- If the hold expires, the departure is announced once (reason
+  `departure_delay`) with the same eventual state as the immediate path.
+- A provider becoming unavailable is stream-integrity loss, not a client
+  departure, and is never delayed.
+
+The window also applies to clients absent from an authoritative snapshot, so
+it caps the worst-case departure announcement delay rather than leaving a
+gap. Keep `departure_delay` short relative to `reconcile_interval` for
+predictable behavior. Diagnostics report the current number of holds as
+`pending_departures`.
 
 ## Token handling
 

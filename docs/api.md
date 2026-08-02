@@ -24,6 +24,14 @@ the provider immediately verifies that BSS with a source-scoped snapshot. Both
 association and disassociation events are verified before publication. This is
 correctness recovery rather than a time-based presence debounce.
 
+When the observer is configured with a nonzero `departure_delay`, losing the
+last known connection instead starts a bounded hold: the client remains
+`present` for the configured window. A reconnect within the window cancels the
+hold and emits nothing, absorbing the flap. When the hold expires without a
+reconnect, the departure is announced once with reason `departure_delay` and
+the same eventual state as the immediate path. Provider failure is never
+delayed; it remains stream-integrity uncertainty.
+
 `GET /v1/health` returns:
 
 - HTTP 503 before any authoritative provider snapshot;

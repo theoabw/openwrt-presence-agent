@@ -34,6 +34,7 @@ type Config struct {
 	MaxStreamClients       int
 	StreamQueueSize        int
 	LogLevel               string
+	DepartureDelay         time.Duration
 }
 
 func Default() Config {
@@ -53,6 +54,7 @@ func Default() Config {
 		MaxEventBytes: 64 * 1024, MaxClients: 512,
 		MaxHTTPConnections: 16, ProviderQueueSize: 256,
 		MaxStreamClients: 4, StreamQueueSize: 64, LogLevel: "info",
+		DepartureDelay: 0,
 	}
 }
 
@@ -81,6 +83,7 @@ func Parse(args []string) (Config, error) {
 	fs.IntVar(&c.MaxStreamClients, "max-stream-clients", c.MaxStreamClients, "maximum event consumers")
 	fs.IntVar(&c.StreamQueueSize, "stream-queue-size", c.StreamQueueSize, "events buffered per consumer")
 	fs.StringVar(&c.LogLevel, "log-level", c.LogLevel, "error, warn, info, or debug")
+	fs.DurationVar(&c.DepartureDelay, "departure-delay", c.DepartureDelay, "hold a client present for this long after its last connection is lost before announcing departure (0 disables)")
 	if err := fs.Parse(args); err != nil {
 		return Config{}, err
 	}
@@ -147,6 +150,12 @@ func (c Config) Validate() error {
 	case "error", "warn", "info", "debug":
 	default:
 		return fmt.Errorf("invalid log-level %q", c.LogLevel)
+	}
+	if c.DepartureDelay < 0 || c.DepartureDelay > 10*time.Minute {
+		return fmt.Errorf("departure-delay must be between 0 and 10m")
+	}
+	if c.DepartureDelay > 0 && c.DepartureDelay < time.Second {
+		return fmt.Errorf("departure-delay must be at least 1s when enabled")
 	}
 	return nil
 }

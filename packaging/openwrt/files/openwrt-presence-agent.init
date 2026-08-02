@@ -48,6 +48,7 @@ start_instance() {
 	append_option "$section" max_stream_clients --max-stream-clients
 	append_option "$section" stream_queue_size --stream-queue-size
 	append_option "$section" log_level --log-level
+	append_option "$section" departure_delay --departure-delay
 	procd_set_param respawn 3600 5 5
 	procd_set_param term_timeout 5
 	procd_set_param stdout 1

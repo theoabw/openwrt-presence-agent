@@ -17,6 +17,9 @@ type Limits struct {
 	MaxClients     int
 	MaxSubscribers int
 	QueueSize      int
+	// DepartureDelay holds a client present after its last connection is lost
+	// before announcing departure. Zero keeps the immediate, literal behavior.
+	DepartureDelay time.Duration
 }
 
 func (e *Engine) Apply(value observation.Observation) error {
@@ -68,6 +71,17 @@ type Engine struct {
 	limits          Limits
 	dropped         atomic.Uint64
 	reconciliations uint64
+
+	departureDelay time.Duration
+	pending        map[string]pendingDeparture
+	stopSweeper    chan struct{}
+	stopOnce       sync.Once
+}
+
+type pendingDeparture struct {
+	provider string
+	source   string
+	deadline time.Time
 }
 
 type client struct {
@@ -86,13 +100,112 @@ func New(l Limits) (*Engine, error) {
 	if _, err := rand.Read(raw[:]); err != nil {
 		return nil, fmt.Errorf("create stream epoch: %w", err)
 	}
-	return &Engine{
-		epoch:       hex.EncodeToString(raw[:]),
-		clients:     make(map[string]*client),
-		providers:   make(map[string]protocol.Provider),
-		subscribers: make(map[uint64]chan protocol.Event),
-		limits:      l,
-	}, nil
+	e := &Engine{
+		epoch:          hex.EncodeToString(raw[:]),
+		clients:        make(map[string]*client),
+		providers:      make(map[string]protocol.Provider),
+		subscribers:    make(map[uint64]chan protocol.Event),
+		limits:         l,
+		departureDelay: l.DepartureDelay,
+		pending:        make(map[string]pendingDeparture),
+	}
+	if l.DepartureDelay > 0 {
+		e.startSweeper()
+	}
+	return e, nil
+}
+
+// Stop halts the departure sweeper goroutine, if one is running. It is
+// idempotent and safe to call after the engine is no longer used.
+func (e *Engine) Stop() {
+	e.stopOnce.Do(func() {
+		if e.stopSweeper != nil {
+			close(e.stopSweeper)
+		}
+	})
+}
+
+func (e *Engine) startSweeper() {
+	e.stopSweeper = make(chan struct{})
+	tick := e.departureDelay / 2
+	if tick > time.Second {
+		tick = time.Second
+	}
+	if tick < 100*time.Millisecond {
+		tick = 100 * time.Millisecond
+	}
+	go func() {
+		t := time.NewTicker(tick)
+		defer t.Stop()
+		for {
+			select {
+			case <-t.C:
+				e.sweepPending(time.Now())
+			case <-e.stopSweeper:
+				return
+			}
+		}
+	}()
+}
+
+// sweepPending applies departure holds whose grace period has elapsed. The
+// deadline parameter is passed in so callers and tests control the clock.
+func (e *Engine) sweepPending(now time.Time) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	for clientID, p := range e.pending {
+		if now.Before(p.deadline) {
+			continue
+		}
+		delete(e.pending, clientID)
+		e.applyPendingDepartureLocked(clientID, p, now)
+	}
+}
+
+// ensurePendingLocked records a departure hold for one client while preserving
+// the earliest observed deadline, so duplicate events do not extend the grace.
+func (e *Engine) ensurePendingLocked(clientID, provider, source string, at time.Time) {
+	if _, ok := e.pending[clientID]; ok {
+		return
+	}
+	e.pending[clientID] = pendingDeparture{
+		provider: provider,
+		source:   source,
+		deadline: at.Add(e.departureDelay),
+	}
+}
+
+// isLastNonStaleLocked reports whether removing connID would leave the client
+// without any live connection. Stale connections do not keep a client present.
+func (e *Engine) isLastNonStaleLocked(c *client, connID string) bool {
+	for id, conn := range c.Connections {
+		if id != connID && !conn.Stale {
+			return false
+		}
+	}
+	return true
+}
+
+// applyPendingDepartureLocked performs the deferred disassociation once a
+// departure hold elapses, unless a live connection appeared in the meantime.
+func (e *Engine) applyPendingDepartureLocked(clientID string, p pendingDeparture, at time.Time) {
+	c, ok := e.clients[clientID]
+	if !ok {
+		return
+	}
+	id := connectionID(p.provider, p.source)
+	if _, existed := c.Connections[id]; !existed {
+		return
+	}
+	delete(c.Connections, id)
+	c.LastSeenAt = at
+	old := c.State
+	c.State = reducedState(c, protocol.StateUnknown)
+	if c.State != old {
+		e.emitLocked("client.presence_changed", "departure_delay", e.publicClientLocked(c))
+	} else {
+		e.emitLocked("client.updated", "departure_delay", e.publicClientLocked(c))
+	}
 }
 
 func connectionID(provider, source string) string {
@@ -135,6 +248,7 @@ func (e *Engine) Associate(provider, source, clientID string, at time.Time, reas
 	c.Connections[id] = conn
 	c.State = protocol.StatePresent
 	c.LastSeenAt = at
+	delete(e.pending, clientID)
 	if !wasPresent {
 		e.emitLocked("client.presence_changed", reason, e.publicClientLocked(c))
 	} else if !existed {
@@ -153,6 +267,10 @@ func (e *Engine) Disassociate(provider, source, clientID string, at time.Time, r
 	id := connectionID(provider, source)
 	_, existed := c.Connections[id]
 	if !existed {
+		return
+	}
+	if e.departureDelay > 0 && c.State == protocol.StatePresent && e.isLastNonStaleLocked(c, id) {
+		e.ensurePendingLocked(clientID, provider, source, at)
 		return
 	}
 	delete(c.Connections, id)
@@ -198,13 +316,19 @@ func (e *Engine) Reconcile(provider string, stations map[string][]string, at tim
 			if conn.Provider != provider {
 				continue
 			}
-			if _, ok := wanted[id][conn.SourceInstance]; !ok {
-				delete(c.Connections, connID)
-				changed[id] = struct{}{}
+			if _, ok := wanted[id][conn.SourceInstance]; ok {
+				continue
 			}
+			if e.departureDelay > 0 && c.State == protocol.StatePresent && e.isLastNonStaleLocked(c, connID) {
+				e.ensurePendingLocked(id, conn.Provider, conn.SourceInstance, at)
+				continue
+			}
+			delete(c.Connections, connID)
+			changed[id] = struct{}{}
 		}
 	}
 	for id, sources := range wanted {
+		delete(e.pending, id)
 		c, ok := e.clients[id]
 		if !ok {
 			c = &client{ID: id, Connections: make(map[string]protocol.Connection), FirstSeenAt: at}
@@ -274,14 +398,21 @@ func (e *Engine) ReconcileSource(
 	connection := connectionID(provider, source)
 	affected := make(map[string]*client, len(wanted))
 	for id, c := range e.clients {
-		if _, ok := c.Connections[connection]; ok {
-			if _, keep := wanted[id]; !keep {
-				delete(c.Connections, connection)
-				affected[id] = c
-			}
+		if _, ok := c.Connections[connection]; !ok {
+			continue
 		}
+		if _, keep := wanted[id]; keep {
+			continue
+		}
+		if e.departureDelay > 0 && c.State == protocol.StatePresent && e.isLastNonStaleLocked(c, connection) {
+			e.ensurePendingLocked(id, provider, source, at)
+			continue
+		}
+		delete(c.Connections, connection)
+		affected[id] = c
 	}
 	for id := range wanted {
+		delete(e.pending, id)
 		c, ok := e.clients[id]
 		if !ok {
 			c = &client{
@@ -359,6 +490,7 @@ func (e *Engine) evictOldestNonPresentLocked(exclude map[string]map[string]struc
 		return false
 	}
 	delete(e.clients, candidate.ID)
+	delete(e.pending, candidate.ID)
 	e.emitLocked("client.removed", "retention_limit", e.publicClientLocked(candidate))
 	return true
 }
@@ -384,6 +516,7 @@ func (e *Engine) SetProvider(p protocol.Provider) {
 			if !changed {
 				continue
 			}
+			delete(e.pending, c.ID)
 			state := reducedState(c, protocol.StateUnknown)
 			if c.State != state {
 				c.State = state
@@ -474,6 +607,7 @@ func (e *Engine) Stats() map[string]any {
 		"clients": len(e.clients), "connections": connections,
 		"stream_clients": len(e.subscribers), "dropped_stream_clients": e.dropped.Load(),
 		"sequence": e.sequence, "reconciliations": e.reconciliations,
+		"pending_departures": len(e.pending),
 	}
 }
 
