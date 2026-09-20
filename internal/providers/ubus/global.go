@@ -39,9 +39,38 @@ func newGlobalSubscriber(socketPath string, maxEventBytes int) *globalSubscriber
 	}
 }
 
+// peerGroup returns the group owning the hostapd control socket when that group
+// differs from the agent's own. hostapd answers ATTACH by writing to the reply
+// socket, so a hostapd running under a different account needs group access to
+// it. Returns -1 when the agent already shares the group or the socket cannot
+// be inspected, which keeps the strict owner-only permissions.
+func (s *globalSubscriber) peerGroup() int {
+	info, err := os.Stat(s.socketPath)
+	if err != nil {
+		return -1
+	}
+	stat, ok := info.Sys().(*syscall.Stat_t)
+	if !ok || int(stat.Gid) == os.Getgid() {
+		return -1
+	}
+	return int(stat.Gid)
+}
+
 func (s *globalSubscriber) Subscribe(ctx context.Context, objects []string, generation uint64, events chan<- subscriptionEvent) error {
 	if err := os.MkdirAll(s.runtimeDir, 0o700); err != nil {
 		return fmt.Errorf("create hostapd runtime directory: %w", err)
+	}
+	dirMode, socketMode := os.FileMode(0o700), os.FileMode(0o600)
+	peerGID := s.peerGroup()
+	if peerGID >= 0 {
+		if err := os.Chown(s.runtimeDir, -1, peerGID); err == nil {
+			dirMode = 0o710
+			if err := os.Chmod(s.runtimeDir, dirMode); err != nil {
+				return fmt.Errorf("secure hostapd runtime directory: %w", err)
+			}
+		} else {
+			peerGID = -1
+		}
 	}
 	localPath := filepath.Join(s.runtimeDir, fmt.Sprintf("event-%d-%d.sock", os.Getpid(), s.counter.Add(1)))
 	local := &net.UnixAddr{Name: localPath, Net: "unixgram"}
@@ -52,7 +81,12 @@ func (s *globalSubscriber) Subscribe(ctx context.Context, objects []string, gene
 	}
 	defer conn.Close()
 	defer os.Remove(localPath)
-	if err := os.Chmod(localPath, 0o600); err != nil {
+	if peerGID >= 0 {
+		if err := os.Chown(localPath, -1, peerGID); err == nil {
+			socketMode = 0o660
+		}
+	}
+	if err := os.Chmod(localPath, socketMode); err != nil {
 		return fmt.Errorf("secure hostapd event socket: %w", err)
 	}
 	stopClose := context.AfterFunc(ctx, func() { _ = conn.Close() })
