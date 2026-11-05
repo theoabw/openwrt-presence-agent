@@ -116,7 +116,7 @@ jobs:
             "${GITHUB_REF_NAME#v}" \
             "$GITHUB_SHA"
       - name: Build with official OpenWrt SDK
-        uses: openwrt/gh-action-sdk@797d0e3d0eb13b355c3447f60d0179d4b43089e2
+        uses: openwrt/gh-action-sdk@f5813d30eeef3534b58ac7e79c5d8842b6035434
         env:
           ARCH: ${{ matrix.arch }}-${{ matrix.openwrt }}
           FEED_DIR: ${{ github.workspace }}/.openwrt-feed
