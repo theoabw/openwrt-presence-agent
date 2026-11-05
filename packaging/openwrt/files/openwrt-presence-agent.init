@@ -21,14 +21,22 @@ append_option() {
 start_instance() {
 	local section="$1"
 	local enabled
+	local token_file
 	config_get_bool enabled "$section" enabled 1
 	[ "$enabled" -eq 1 ] || return 0
+	config_get token_file "$section" token_file
+	token_file="${token_file:-/etc/openwrt-presence-agent/token}"
+	mkdir -p "$(dirname "$token_file")" || return 1
+	if [ ! -s "$token_file" ]; then
+		tr -dc 'A-Za-z0-9' < /dev/urandom | head -c 48 > "$token_file"
+	fi
+	chmod 600 "$token_file" || return 1
 
 	procd_open_instance
 	procd_set_param command /usr/bin/openwrt-presence-agent
 	append_option "$section" listen_address --listen-address
 	append_option "$section" port --port
-	append_option "$section" token_file --token-file
+	procd_append_param command --token-file "$token_file"
 	append_option "$section" agent_id_file --agent-id-file
 	append_option "$section" ubus_path --ubus-path
 	append_option "$section" hostapd_socket --hostapd-socket
@@ -58,11 +66,6 @@ start_instance() {
 
 start_service() {
 	umask 077
-	mkdir -p /etc/openwrt-presence-agent
-	if [ ! -s /etc/openwrt-presence-agent/token ]; then
-		tr -dc 'A-Za-z0-9' < /dev/urandom | head -c 48 > /etc/openwrt-presence-agent/token
-	fi
-	chmod 600 /etc/openwrt-presence-agent/token
 	config_load openwrt-presence-agent
 	config_foreach start_instance observer
 }
