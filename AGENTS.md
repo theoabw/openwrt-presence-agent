@@ -31,6 +31,26 @@ dump, bearer token, or wireless credential. Use reserved values:
 - Public operations stay read-only. The agent exposes no shell, generic ubus
   call, UCI mutation, or router control, and a change must not add one.
 - Provider-specific payloads stay behind the normalized observation layer.
+- The module has no external dependencies on purpose. Adding one requires the
+  maintainer's approval and the reason in the pull request body.
+- Every queue, map, buffer, and goroutine carries an explicit bound and a test
+  that exercises the limit. An unbounded one is a defect, not a tradeoff.
+
+## Packaging and credentials
+
+- The package adds no firewall rule, and it must not gain one. Reachability is
+  the operator's decision.
+- The bearer token and agent identity files stay root-only with mode `0600`.
+  The init script and `postinst` keep those permissions on every path.
+
+## Evidence and claims
+
+- A compatibility claim names the router model, firmware version, and package
+  architecture, or says the change is not tested on hardware. Do not widen a
+  support claim without the checklist in `docs/compatibility.md`.
+- Published latency and resource figures come from `scripts/performance/` and
+  the sanitized results in `performance/`. Do not estimate numbers in
+  documentation.
 
 ## Protocol changes
 
