@@ -14,6 +14,19 @@ The initial provider requires:
 - a LAN interface, `br-lan` by default, supporting ARP and Linux route-netlink
   neighbor notifications.
 
+The reply socket that carries hostapd events needs write access from hostapd.
+On stock OpenWrt, hostapd runs inside a `ujail` as the `network` user while the
+agent runs as root. The agent inspects the group that owns the hostapd control
+socket and gives its runtime directory and reply socket that group; when the
+group already matches, or the ownership cannot be changed, it keeps owner-only
+permissions. Releases before `v0.3.1` used owner-only permissions and could not
+receive Wi-Fi events in that configuration.
+
+The daemon runs as root under `procd`. Raw sockets are required for `AF_NETLINK`
+neighbor notifications and for `arping`, so the process cannot drop that access
+without disabling wired presence. The API itself remains read-only and
+consumers need no elevated permissions.
+
 The daemon enumerates objects and never requires configured radio or interface
 names. Event `IFNAME` values are accepted only when they match a currently
 discovered `hostapd.*` object. It deliberately does not call broad

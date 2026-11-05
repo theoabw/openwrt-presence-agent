@@ -25,11 +25,18 @@ open a compatibility request instead.
 From the directory containing the downloads, calculate the package checksum:
 
 ```sh
-sha256sum openwrt-presence-agent_VERSION_RELEASE_ARCH.apk
+sha256sum openwrt-presence-agent-VERSION-RELEASE-ARCH.apk
 ```
 
 Compare the complete result with the SHA-256 value published for that exact
 release asset. Do not continue if they differ.
+
+SDK releases use the OpenWrt package name and architecture for each release, for
+example `openwrt-presence-agent-0.3.1-r1-aarch64_cortex-a53.apk` or
+`openwrt-presence-agent_0.3.1-r1_mipsel_24kc.ipk`. The additional
+`aarch64_cortex-a53_neon-vfpv4` `.ipk` is the vendor build for the
+hardware-tested GL.iNet Flint 3 firmware and does not belong on a standard
+OpenWrt release.
 
 ## Install directly
 
@@ -106,7 +113,7 @@ Upgrade by verifying and copying the new release package as above, then
 installing its explicit local path:
 
 ```sh
-apk add --allow-untrusted /tmp/openwrt-presence-agent_NEW_VERSION_ARCH.apk
+apk add --allow-untrusted /tmp/openwrt-presence-agent-VERSION-RELEASE-ARCH.apk
 ```
 
 Use `opkg install /tmp/PACKAGE.ipk` on 24.10 and older. Feed installation is

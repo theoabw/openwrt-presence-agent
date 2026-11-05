@@ -13,7 +13,9 @@ Potential consumers include:
 - small adapters that translate observations into another local protocol.
 
 These are integration possibilities, not bundled features. The agent does not
-send webhooks, write databases, publish MQTT, or make outbound connections.
+send webhooks, write databases, publish MQTT, or make outbound connections. A
+browser dashboard needs a local proxy, because the listener does not enable CORS
+and a browser cannot set an `Authorization` header on a WebSocket connection.
 
 ## Recommended integration pattern
 

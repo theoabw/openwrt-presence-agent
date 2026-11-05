@@ -1,6 +1,7 @@
 # Development and package builds
 
-The project requires Go 1.25 or later. The canonical local validation command
+The project requires Go 1.23 or later, matching `go.mod`, and CI uses the
+toolchain that file declares. The canonical local validation command
 is:
 
 ```sh
@@ -44,10 +45,10 @@ Release builds take the real version from the signed `vMAJOR.MINOR.PATCH` tag
 and inject it into the generated feed recipe and package artifacts. Contributors
 therefore do not choose or commit release versions.
 
-The `OpenWrt SDK` workflow performs this build against OpenWrt 25.12 and 24.10
-for the common architecture matrix documented in
-[compatibility](compatibility.md). OpenWrt 25.12 emits `.apk`; 24.10 emits
-`.ipk`.
+The `OpenWrt SDK` workflow builds the `x86_64` package for the vanilla runtime
+test against OpenWrt 25.12 and 24.10. The release workflow builds the full
+architecture matrix documented in [compatibility](compatibility.md). OpenWrt
+25.12 emits `.apk`; 24.10 emits `.ipk`.
 
 ## Vanilla OpenWrt runtime test
 
