@@ -3,11 +3,15 @@ package main
 import (
 	"context"
 	"errors"
+	"flag"
 	"fmt"
+	"io/fs"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -26,6 +30,9 @@ func main() {
 }
 
 func run(args []string) int {
+	if len(args) > 0 && args[0] == "show-token" {
+		return showToken(args[1:])
+	}
 	if len(args) == 1 && (args[0] == "--version" || args[0] == "-version") {
 		fmt.Printf("openwrt-presence-agent %s\n", version)
 		return 0
@@ -69,6 +76,9 @@ func run(args []string) int {
 	result := make(chan error, 1)
 	go func() { result <- server.ListenAndServe() }()
 	logger.Info("observer started", "version", version, "address", cfg.Address(), "provider", cfg.Provider)
+	if ip := net.ParseIP(cfg.ListenAddress); ip != nil && ip.IsLoopback() {
+		logger.Info("API listens on loopback only, so only local processes can connect; Home Assistant on another host needs a LAN listen-address (see docs/installation.md)", "address", cfg.Address())
+	}
 	exitCode := 0
 	select {
 	case err := <-result:
@@ -96,6 +106,36 @@ func run(args []string) int {
 	}
 	logger.Info("observer stopped")
 	return exitCode
+}
+
+func showToken(args []string) int {
+	tokenFile := config.Default().TokenFile
+	flags := flag.NewFlagSet("show-token", flag.ContinueOnError)
+	flags.StringVar(&tokenFile, "token-file", tokenFile, "bearer token file")
+	if err := flags.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return 0
+		}
+		return 2
+	}
+	if flags.NArg() != 0 {
+		fmt.Fprintf(os.Stderr, "show-token: unexpected arguments: %s\n", strings.Join(flags.Args(), " "))
+		return 2
+	}
+	token, err := config.LoadToken(tokenFile)
+	if err != nil {
+		switch {
+		case errors.Is(err, fs.ErrNotExist):
+			fmt.Fprintf(os.Stderr, "show-token: token file %s does not exist; start the service once to create it\n", tokenFile)
+		case errors.Is(err, fs.ErrPermission):
+			fmt.Fprintf(os.Stderr, "show-token: cannot read token file %s: permission denied; run as root or the file owner\n", tokenFile)
+		default:
+			fmt.Fprintf(os.Stderr, "show-token: invalid token file %s: %v\n", tokenFile, err)
+		}
+		return 1
+	}
+	fmt.Println(token)
+	return 0
 }
 
 func newLogger(level string) *slog.Logger {
