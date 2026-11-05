@@ -5,6 +5,12 @@ The intended installation unit is a native OpenWrt package: `.apk` on OpenWrt
 from a release is the primary installation path because vendor package
 registries may lag or omit the package.
 
+| Installation path | When it applies |
+|---|---|
+| Release package asset | A published asset matches the router target. This is the guaranteed path for every release. |
+| OpenWrt package feed | The firmware's configured feed already provides `openwrt-presence-agent` at the intended version. Availability in a feed is not implied by a release. |
+| GL.iNet vendor `.ipk` | Only on the GL.iNet Flint 3 firmware the asset was built for. This vendor build does not belong on standard OpenWrt. |
+
 ## Choose and verify a package
 
 Check the OpenWrt version and package architecture:
@@ -65,47 +71,82 @@ and mode `0600`. The daemon creates a stable random `agent-id` alongside it.
 Both files and `/etc/config/openwrt-presence-agent` are preserved as
 configuration during upgrades.
 
-## Verify first API access
+## First run
 
-The listener defaults to router loopback. On the router, read the token into a
-temporary shell variable, request service health, and then unset the variable:
+The package is installed and the service is running. These steps connect Home
+Assistant on another host.
+
+### 1. Set the router's LAN address
+
+The listener defaults to `127.0.0.1` so a new installation accepts connections
+only from the router itself. Setting a LAN address exposes the bearer-protected
+API to every host that can reach that address in the LAN firewall zone.
 
 ```sh
-OBSERVER_TOKEN="$(cat /etc/openwrt-presence-agent/token)"
-wget -qO- \
-  --header="Authorization: Bearer ${OBSERVER_TOKEN}" \
-  http://127.0.0.1:8787/v1/health
-unset OBSERVER_TOKEN
+uci set openwrt-presence-agent.main.listen_address='192.168.1.1'
+uci commit openwrt-presence-agent
+/etc/init.d/openwrt-presence-agent reload
 ```
 
-Do not paste the token into issue reports or logs. If the request fails,
-inspect:
+Substitute the literal address assigned to the router's trusted LAN interface
+for `192.168.1.1`. OpenWrt's default LAN input policy already permits
+connections to this address, and the package adds no firewall rule. Do not use
+a WAN address. Wildcard addresses are accepted only when configured explicitly
+and are not recommended. The API is plain HTTP, so keep the listener on a
+trusted management network or place it behind a TLS reverse proxy; see
+[configuration and credentials](configuration.md).
+
+### 2. Retrieve the token
+
+```sh
+ssh root@ROUTER openwrt-presence-agent show-token
+```
+
+The command prints only the token, so the output can be pasted directly into
+the Home Assistant form. If the subcommand is not available on the installed
+version, read the same file:
+
+```sh
+ssh root@ROUTER 'cat /etc/openwrt-presence-agent/token'
+```
+
+Both paths read `/etc/openwrt-presence-agent/token`. If the service was
+configured with a different `token_file`, pass that path to `show-token` with
+`--token-file`, or substitute it in the `cat` command.
+
+### 3. Add the integration in Home Assistant
+
+Install the
+[OpenWrt Presence integration](https://github.com/theoabw/ha-openwrt-presence),
+then add it and enter:
+
+- **Host**: the router LAN address set in step 1.
+- **Port**: `8787`, unless `port` was changed in UCI.
+- **Token**: the value printed in step 2.
+
+## Verify first access
+
+If the integration cannot connect, check the service on the router:
 
 ```sh
 /etc/init.d/openwrt-presence-agent status
 logread -e openwrt-presence-agent
 ```
 
-## Network access
-
-The default listener is `127.0.0.1:8787`. The package never creates a firewall
-rule. To expose it on a trusted LAN, explicitly set a literal LAN address after
-checking the interface and firewall zone:
+In the router shell, request service health using the LAN address set during
+setup:
 
 ```sh
-uci set openwrt-presence-agent.main.listen_address='192.0.2.1'
-uci commit openwrt-presence-agent
-/etc/init.d/openwrt-presence-agent reload
+OBSERVER_TOKEN="$(openwrt-presence-agent show-token)"
+wget -qO- \
+  --header="Authorization: Bearer ${OBSERVER_TOKEN}" \
+  http://192.168.1.1:8787/v1/health
+unset OBSERVER_TOKEN
 ```
 
-`192.0.2.1` is documentation-only; substitute an address assigned to the
-router's trusted LAN. Do not use a WAN address. Wildcard addresses are accepted
-only when explicitly configured and are not recommended; the package does not
-open the firewall.
-
-Bearer authentication without TLS is appropriate only on a trusted management
-network. See [configuration and credentials](configuration.md) for SSH tunnel
-and TLS guidance.
+Do not paste the token into issue reports or logs. If this request succeeds and
+Home Assistant still cannot connect, confirm that the entry uses the same host
+and port and that the Home Assistant host can reach the LAN address.
 
 ## Upgrade, rollback, and removal
 
