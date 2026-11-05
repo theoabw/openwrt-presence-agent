@@ -1,0 +1,56 @@
+name: Pull request labels
+
+on:
+  pull_request_target:
+    types: [opened, edited, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+jobs:
+  label:
+    name: Label by title type
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const title = context.payload.pull_request.title;
+            const match = /^([a-z]+)(?:\(([^)]+)\))?(!)?: /.exec(title);
+            if (!match) {
+              return;
+            }
+            const [, type, scope, breaking] = match;
+            const byType = {
+              build: "maintenance",
+              chore: "maintenance",
+              ci: "maintenance",
+              docs: "documentation",
+              feat: "enhancement",
+              fix: "bug",
+              perf: "maintenance",
+              refactor: "maintenance",
+              release: "maintenance",
+              revert: "maintenance",
+              test: "maintenance",
+            };
+            const labels = new Set();
+            if (breaking) {
+              labels.add("breaking");
+            }
+            if (scope === "deps") {
+              labels.add("dependencies");
+            } else if (byType[type]) {
+              labels.add(byType[type]);
+            }
+            if (labels.size === 0) {
+              return;
+            }
+            await github.rest.issues.addLabels({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.payload.pull_request.number,
+              labels: [...labels],
+            });
