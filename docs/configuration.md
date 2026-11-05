@@ -8,6 +8,8 @@ script converts each option to an explicit daemon argument.
 | `enabled` | `1` | Start this instance. |
 | `listen_address` | `127.0.0.1` | Literal IPv4 or IPv6 address. |
 | `port` | `8787` | `1`–`65535`. |
+| `mdns` | `1` | Advertise the API over mDNS/DNS-SD on `mdns_interface`. Disabled when `listen_address` is loopback. The binary default is off; the shipped OpenWrt package enables it. |
+| `mdns_interface` | `br-lan` | Interface joined for mDNS. Its first IPv4 address is advertised when `listen_address` is a wildcard address. An IPv6-only listener is not advertised. |
 | `token_file` | `/etc/openwrt-presence-agent/token` | Absolute credential path. |
 | `agent_id_file` | `/etc/openwrt-presence-agent/agent-id` | Absolute stable-ID path. |
 | `ubus_path` | `/bin/ubus` | Absolute path to the local ubus client. |
