@@ -21,6 +21,8 @@ type Config struct {
 	ArpingPath             string
 	DHCPLeasesFile         string
 	LANInterface           string
+	MDNS                   bool
+	MDNSInterface          string
 	Provider               string
 	ReconcileInterval      time.Duration
 	WiredReconcileInterval time.Duration
@@ -47,6 +49,7 @@ func Default() Config {
 		ArpingPath:        "/usr/bin/arping",
 		DHCPLeasesFile:    "/tmp/dhcp.leases",
 		LANInterface:      "br-lan",
+		MDNSInterface:     "br-lan",
 		Provider:          "ubus",
 		ReconcileInterval: 30 * time.Second, WiredReconcileInterval: 2 * time.Second,
 		DiscoveryInterval: 10 * time.Second,
@@ -70,6 +73,8 @@ func Parse(args []string) (Config, error) {
 	fs.StringVar(&c.ArpingPath, "arping-path", c.ArpingPath, "absolute arping executable path")
 	fs.StringVar(&c.DHCPLeasesFile, "dhcp-leases-file", c.DHCPLeasesFile, "absolute dnsmasq leases file path")
 	fs.StringVar(&c.LANInterface, "lan-interface", c.LANInterface, "LAN interface used for Ethernet reachability probes")
+	fs.BoolVar(&c.MDNS, "mdns", c.MDNS, "advertise the API over mDNS/DNS-SD")
+	fs.StringVar(&c.MDNSInterface, "mdns-interface", c.MDNSInterface, "interface used for mDNS advertisement")
 	fs.StringVar(&c.Provider, "provider", c.Provider, "observation provider")
 	fs.DurationVar(&c.ReconcileInterval, "reconcile-interval", c.ReconcileInterval, "snapshot reconciliation interval")
 	fs.DurationVar(&c.WiredReconcileInterval, "wired-reconcile-interval", c.WiredReconcileInterval, "active Ethernet reconciliation interval")
@@ -120,6 +125,9 @@ func (c Config) Validate() error {
 	}
 	if c.LANInterface == "" || strings.ContainsAny(c.LANInterface, " \t\r\n/") {
 		return fmt.Errorf("lan-interface must be a valid interface name")
+	}
+	if c.MDNSInterface == "" || strings.ContainsAny(c.MDNSInterface, " \t\r\n/") {
+		return fmt.Errorf("mdns-interface must be a valid interface name")
 	}
 	if c.Provider != "ubus" {
 		return fmt.Errorf("unsupported provider %q", c.Provider)
