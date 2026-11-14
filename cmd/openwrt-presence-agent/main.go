@@ -20,6 +20,7 @@ import (
 	"github.com/theoabw/openwrt-presence-agent/internal/config"
 	"github.com/theoabw/openwrt-presence-agent/internal/engine"
 	"github.com/theoabw/openwrt-presence-agent/internal/identity"
+	"github.com/theoabw/openwrt-presence-agent/internal/mdns"
 	"github.com/theoabw/openwrt-presence-agent/internal/providers"
 )
 
@@ -75,6 +76,27 @@ func run(args []string) int {
 	server := api.New(cfg, state, auth.NewBearer(token), agentID, version, logger)
 	result := make(chan error, 1)
 	go func() { result <- server.ListenAndServe() }()
+	var responder *mdns.Responder
+	if cfg.MDNS {
+		responder, err = mdns.New(mdns.Config{
+			AgentID: agentID, Port: cfg.Port,
+			ListenAddress: cfg.ListenAddress, Interface: cfg.MDNSInterface,
+		}, logger)
+		switch {
+		case errors.Is(err, mdns.ErrLoopbackOnly):
+			logger.Info("mDNS advertisement disabled: API listens on loopback only")
+		case errors.Is(err, mdns.ErrNoIPv4):
+			logger.Info("mDNS advertisement disabled: API listens on an IPv6 address only")
+		case err != nil:
+			logger.Warn("mDNS advertisement unavailable", "error", err)
+		default:
+			go func() {
+				if err := responder.Run(ctx); err != nil {
+					logger.Warn("mDNS advertisement stopped", "error", err)
+				}
+			}()
+		}
+	}
 	logger.Info("observer started", "version", version, "address", cfg.Address(), "provider", cfg.Provider)
 	if ip := net.ParseIP(cfg.ListenAddress); ip != nil && ip.IsLoopback() {
 		logger.Info("API listens on loopback only, so only local processes can connect; Home Assistant on another host needs a LAN listen-address (see docs/installation.md)", "address", cfg.Address())
@@ -97,6 +119,11 @@ func run(args []string) int {
 			stop()
 		}
 	case <-ctx.Done():
+	}
+	if responder != nil {
+		if err := responder.Close(); err != nil {
+			logger.Warn("mDNS shutdown failed", "error", err)
+		}
 	}
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()

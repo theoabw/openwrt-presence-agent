@@ -53,6 +53,7 @@ func TestUCIDefaultsMatchBinaryDefaults(t *testing.T) {
 		"arping_path":              c.ArpingPath,
 		"dhcp_leases_file":         c.DHCPLeasesFile,
 		"lan_interface":            c.LANInterface,
+		"mdns_interface":           c.MDNSInterface,
 		"provider":                 c.Provider,
 		"reconcile_interval":       c.ReconcileInterval.String(),
 		"wired_reconcile_interval": c.WiredReconcileInterval.String(),
@@ -145,5 +146,48 @@ func TestPackagedArpingDependencyAndPath(t *testing.T) {
 
 	if got := Default().ArpingPath; got != "/usr/bin/arping" {
 		t.Errorf("default arping path = %q", got)
+	}
+}
+
+func TestPackagedMDNSIsEnabled(t *testing.T) {
+	data, err := os.ReadFile("../../packaging/openwrt/files/openwrt-presence-agent.config")
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(data)
+	for _, want := range []string{
+		"option mdns '1'",
+		"option mdns_interface 'br-lan'",
+	} {
+		if !strings.Contains(text, want) {
+			t.Errorf("packaged config does not contain %q", want)
+		}
+	}
+	if Default().MDNS {
+		t.Error("mDNS must stay off in binary defaults; the package opts in")
+	}
+}
+
+func TestMDNSFlagsAndValidation(t *testing.T) {
+	parsed, err := Parse([]string{"--mdns", "--mdns-interface", "eth0"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !parsed.MDNS || parsed.MDNSInterface != "eth0" {
+		t.Fatalf("parsed mDNS settings = %v/%q", parsed.MDNS, parsed.MDNSInterface)
+	}
+	byDefault, err := Parse(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if byDefault.MDNS || byDefault.MDNSInterface != "br-lan" {
+		t.Fatalf("default mDNS settings = %v/%q", byDefault.MDNS, byDefault.MDNSInterface)
+	}
+	for _, name := range []string{"", "br lan", "br/lan"} {
+		c := Default()
+		c.MDNSInterface = name
+		if err := c.Validate(); err == nil {
+			t.Errorf("mdns-interface %q accepted", name)
+		}
 	}
 }

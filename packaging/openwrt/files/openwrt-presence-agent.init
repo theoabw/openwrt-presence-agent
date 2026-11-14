@@ -18,6 +18,17 @@ append_option() {
 	[ -n "$value" ] && procd_append_param command "$flag" "$value"
 }
 
+append_bool_option() {
+	local section="$1"
+	local option="$2"
+	local flag="$3"
+	local enabled
+	config_get_bool enabled "$section" "$option" 0
+	if [ "$enabled" -eq 1 ]; then
+		procd_append_param command "$flag"
+	fi
+}
+
 start_instance() {
 	local section="$1"
 	local enabled
@@ -36,6 +47,8 @@ start_instance() {
 	procd_set_param command /usr/bin/openwrt-presence-agent
 	append_option "$section" listen_address --listen-address
 	append_option "$section" port --port
+	append_bool_option "$section" mdns --mdns
+	append_option "$section" mdns_interface --mdns-interface
 	procd_append_param command --token-file "$token_file"
 	append_option "$section" agent_id_file --agent-id-file
 	append_option "$section" ubus_path --ubus-path
